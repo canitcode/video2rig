@@ -40,9 +40,9 @@ the body with two views).
 | --- | --- |
 | Blender | tested on 5.1 (recent 4.x should work): small scripts run inside it, with or without its window; it also renders the reader's training pictures (in the background) |
 | Python | 3.10-3.12 with `numpy`, `scipy`, `opencv-python`, `threadpoolctl`, `transformers` 5 (the joint reader), `networkx` and `scikit-image` (the auto-rig) |
-| PyTorch | with CUDA, for the joint reader (Meta's DINOv2-small, Apache 2.0, through Hugging Face `transformers`) and for the older road's point tracker (Google DeepMind's BootsTAPIR, Apache 2.0, bundled in `third_party/`) |
+| PyTorch | with CUDA (NVIDIA), or the default macOS build on an Apple-silicon Mac (Metal), for the joint reader (Meta's DINOv2-small, Apache 2.0, through Hugging Face `transformers`) and for the older road's point tracker (Google DeepMind's BootsTAPIR, Apache 2.0, bundled in `third_party/`) |
 | ffmpeg | on PATH: the review film, and the films and sheets the Blender scripts make (`render_actions.py`, the auto-rig's pose sheet). The review also takes `V2R_FFMPEG`, the full path to the ffmpeg program |
-| Graphics card | **NVIDIA, RTX 30 series or newer**: the reader trains and reads in bfloat16, which these cards do natively (older cards are untested). Tested on an RTX 5070 Ti Laptop and an RTX 4070, 12 GB each. Training a reader needs the card. Reading a clip takes seconds on the card; `run --cpu` (or a computer without CUDA) reads on the processor instead, about 0.8 s per panel picture on a 24-thread laptop processor (a 5 s two-panel clip: about 3 minutes). The older road's tracker peaks at about 6.5 GB for a 5 s clip at full size (a smaller card tracks at 512 px automatically) and also runs on the processor, much slower |
+| Graphics card | **NVIDIA, RTX 30 series or newer**: the reader trains and reads in bfloat16, which these cards do natively (older cards are untested). Tested on an RTX 5070 Ti Laptop and an RTX 4070, 12 GB each. Training a reader needs the card. Reading a clip takes seconds on the card; `run --cpu` (or a computer without CUDA) reads on the processor instead, about 0.8 s per panel picture on a 24-thread laptop processor (a 5 s two-panel clip: about 3 minutes). The older road's tracker peaks at about 6.5 GB for a 5 s clip at full size (a smaller card tracks at 512 px automatically) and also runs on the processor, much slower. **Apple-silicon Mac**: the reader trains and reads on the chip's own GPU through Metal (MPS), in bfloat16 as well; measured on an M4 Pro, about 0.65 s per training step at batch 8 (a 9000-step reader: a few hours, against 40 minutes on the RTX 4070) and a 1 s two-panel clip read in 12 s. The one op Metal lacks runs on the processor by itself. The device is picked in the order CUDA, Metal, processor (`video2rig/reader/device.py`) |
 | Disk | about 85 MB for DINOv2-small (downloaded once from the Hugging Face hub when the first reader trains; reading fetches its small config file, so the first read needs the internet too; both stay in `~/.cache/huggingface`), a reader and its training pictures per creature (`<project>/reader/`), 220 MB for the tracker's weights (older road, on first use) |
 | A video generator | image-to-video from a first frame, 720p (two views) or 480p (one view), 4-8 s. Tested: Seedance on Dreamina (CapCut), Topview or the BytePlus API |
 
@@ -51,6 +51,7 @@ Install (Windows PowerShell; the same with `pip` elsewhere):
 ```powershell
 python -m pip install -r requirements.txt
 python -m pip install torch --index-url https://download.pytorch.org/whl/cu128   # PyTorch with CUDA
+# macOS (Apple silicon): python -m pip install torch   (the default build runs the reader on Metal)
 winget install Gyan.FFmpeg                                                      # or any ffmpeg on PATH
 ```
 

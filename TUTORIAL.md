@@ -27,7 +27,7 @@ How long, the first time (an RTX 4070): install 30-60 min, steps 2-5 about 10 mi
 
 | | |
 | --- | --- |
-| A computer | Windows 10/11 or Linux, an **NVIDIA graphics card, RTX 30 series or newer** (12 GB tested; 8 GB works for reading, training is slower) |
+| A computer | Windows 10/11 or Linux, an **NVIDIA graphics card, RTX 30 series or newer** (12 GB tested; 8 GB works for reading, training is slower); or an **Apple-silicon Mac**, where the reader runs on Metal (training takes a few hours instead of 40 minutes) |
 | Blender | 5.1 (recent 4.x should work), from blender.org |
 | Python | 3.11 (3.10-3.12), from python.org |
 | ffmpeg | on PATH (Windows: `winget install Gyan.FFmpeg`) |
@@ -44,6 +44,7 @@ python -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 python -m pip install torch --index-url https://download.pytorch.org/whl/cu128     # PyTorch with CUDA
+# macOS (Apple silicon): python -m pip install torch   (the default build has Metal)
 ```
 
 Check it: `python -m video2rig -h` prints the commands. Every command below is run from this folder, with the venv

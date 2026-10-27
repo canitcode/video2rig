@@ -9,4 +9,5 @@ networkx
 scikit-image
 # PyTorch with CUDA for the joint reader and the point tracker (see README, "Install"):
 # python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
+# macOS (Apple silicon): plain  python -m pip install torch  (the default build runs the reader on Metal)
 # ffmpeg is not a Python package: put ffmpeg on PATH (README, "Install")
