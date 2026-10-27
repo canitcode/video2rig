@@ -189,14 +189,15 @@ def labels(a):
 def train(a):
     import torch
     import torch.nn.functional as F
+    from .device import autocast, describe, pick_device
     from .net import count_params, gaussians, sample_maps
     from .train import augment, batches, evaluate, evaluate_depth, load_items
     t0 = time.time()
     log = lambda s: print(f'[{time.time() - t0:6.1f}s] {s}', flush=True)
     torch.manual_seed(a.seed)
     rng = np.random.default_rng(a.seed)
-    dev = torch.device('cuda')
-    torch.backends.cudnn.benchmark = True
+    dev = pick_device()
+    log(f'device: {describe(dev)}')
     pr = Project(a.project)
     cfg = pr.clip_cfg('')
     cfg.setdefault('solve', {})
@@ -264,7 +265,7 @@ def train(a):
         lr_k = min((step + 1) / warm, 1.0) * .5 * (1 + math.cos(math.pi * step / a.steps))
         for g, l0 in zip(opt.param_groups, base):
             g['lr'] = l0 * lr_k
-        with torch.autocast('cuda', dtype=torch.bfloat16):
+        with autocast(dev):
             heat, dmap, plog, loc = model(normalise(x).contiguous(memory_format=torch.channels_last))
         weight = 1 + 9 * (target > .05).float()
         loss_h = ((weight * (heat.float() - target) ** 2).mean((2, 3))).sum(1).mean() * 100
@@ -335,7 +336,7 @@ def evaluate_dense(model, imgs, parts, local, dev, bs=32):
     with torch.no_grad():
         for i in range(0, len(imgs), bs):
             x = normalise(torch.from_numpy(imgs[i:i + bs]).to(dev))
-            with torch.autocast('cuda', dtype=torch.bfloat16):
+            with autocast(dev):
                 _, _, plog, loc = model(x)
             cls = plog.float().argmax(1).cpu().numpy()                        # 0 background, j + 1 bone j
             pm = parts[i:i + bs].astype(np.int64)
@@ -363,10 +364,11 @@ def read(a):
     import torch
     from .. import clip as clipmod
     from .net import sample_maps
+    from .device import pick_device
     from .read import _read, _warp_back, _warp_copy, load_reader, panels, tta_copies
     t0 = time.time()
     pr = Project(a.project)
-    dev = torch.device('cuda')
+    dev = pick_device()
     rpath = Path(a.reader) if a.reader else pr.root / 'reader' / 'reader-dense.pt'
     model, ck = load_reader(rpath, dev)
     if not ck.get('dense'):
@@ -438,7 +440,7 @@ def read(a):
                 heat_s = dmap_s = prob_s = loc_s = None
                 for s, dx, dy in copies:
                     x = x0 if (s, dx, dy) == (1.0, 0.0, 0.0) else _warp_copy(x0, s, dx, dy)
-                    with torch.autocast('cuda', dtype=torch.bfloat16):
+                    with autocast(dev):
                         heat, dmap, plog, loc = model(x)
                     heat, dmap, prob, loc = heat.float(), dmap.float(), torch.softmax(plog.float(), 1), loc.float()
                     if (s, dx, dy) != (1.0, 0.0, 0.0):

@@ -26,7 +26,8 @@ def detect(cr, clip, log=print):
         import torch
         from transformers import AutoProcessor, VitPoseForPoseEstimation
         proc = AutoProcessor.from_pretrained(MODEL)
-        dev = 'cuda' if torch.cuda.is_available() else 'cpu'
+        from .reader.device import pick_device
+        dev = pick_device()
         model = VitPoseForPoseEstimation.from_pretrained(MODEL).to(dev).eval()
     except Exception as e:                              # no transformers, no network for the first download
         log(f'keypoints: animal pose model unavailable ({type(e).__name__}), going on without it')

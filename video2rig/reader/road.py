@@ -69,7 +69,8 @@ def read_clip(project, clip, reader=None, cpu=False, tag='', log=print, cache=Tr
     from .. import clip as clipmod
     from .read import load_reader, panels, read_frames
     t0 = time.time()
-    dev = torch.device('cpu' if cpu or not torch.cuda.is_available() else 'cuda')
+    from .device import pick_device
+    dev = pick_device(cpu=cpu)
     model, ck = load_reader(path, dev)
     crop_model = load_reader(cpath, dev) if cpath is not None else None
     kps = [tuple(k) for k in ck['keypoints']]

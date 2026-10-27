@@ -25,6 +25,7 @@ import torch.nn.functional as F
 from ..common import Project, write_json
 from ..creature import Creature
 from . import end_pairs, is_offaxis, keypoints, points, project_ortho, render_keypoints
+from .device import autocast, describe, interpolate_area, pick_device
 from .net import SIZE, Reader, count_params, decode, gaussians, letterbox, normalise, sample_maps
 
 HOLD_OUT = .05
@@ -213,7 +214,7 @@ def augment(img, uv, bg, rng, extra=(), maps=None):
             xb = F.conv2d(F.pad(xb, (L // 2, (L - 1) // 2, L // 2, (L - 1) // 2), mode='replicate'), k, groups=3)
         if rng.random() < .3:
             f = rng.uniform(.5, .8)
-            xb = F.interpolate(F.interpolate(xb, scale_factor=f, mode='area'), size=(SIZE, SIZE), mode='bilinear',
+            xb = F.interpolate(interpolate_area(xb, scale_factor=f), size=(SIZE, SIZE), mode='bilinear',
                                align_corners=False)
         out[b:b + 1] = xb
     x = out + torch.randn_like(out) * torch.empty(B, 1, 1, 1, device=dev).uniform_(0, .025)
@@ -363,7 +364,7 @@ def evaluate(model, imgs, uv, valid, scale, views, dev, bs=32, ctx=None):
             ua, ub = (torch.from_numpy(z[i:i + bs]).to(dev) for z in ctx)
             ones = torch.ones(ua.shape[:2], device=dev)
             c = context_maps(ua, ones, ub, ones)
-        with torch.autocast('cuda', dtype=torch.bfloat16):
+        with autocast(dev):
             out = model(x, c) if model.context else model(x)
         heat = out[0] if isinstance(out, tuple) else out                  # a depth reader gives its depth maps too
         p, _ = decode(heat.float())
@@ -395,7 +396,7 @@ def evaluate_skin(model, imgs, maps, dev, bs=32):
     ious, miss = [], []
     for i in range(0, len(imgs), bs):
         x = normalise(torch.from_numpy(imgs[i:i + bs]).to(dev))
-        with torch.autocast('cuda', dtype=torch.bfloat16):
+        with autocast(dev):
             smap = model(x)[2].float()
         mt = torch.from_numpy(maps[i:i + bs].astype(np.float32)).to(dev)
         pm, tm = torch.sigmoid(smap[:, 3]) > .5, mt[..., 3] > .5
@@ -415,7 +416,7 @@ def evaluate_depth(model, imgs, uv, dd, inside, seen, views, kps, height, dev, b
     pred = np.zeros_like(dd)
     for i in range(0, len(imgs), bs):
         x = normalise(torch.from_numpy(imgs[i:i + bs]).to(dev))
-        with torch.autocast('cuda', dtype=torch.bfloat16):
+        with autocast(dev):
             dmap = model(x)[1]
         pred[i:i + bs] = sample_maps(dmap.float(), torch.from_numpy(uv[i:i + bs]).to(dev)).cpu().numpy()
     model.train()
@@ -477,8 +478,8 @@ def main():
     log = lambda s: print(f'[{time.time() - t0:6.1f}s] {s}', flush=True)
     torch.manual_seed(a.seed)
     rng = np.random.default_rng(a.seed)
-    dev = torch.device('cuda')
-    torch.backends.cudnn.benchmark = True
+    dev = pick_device()
+    log(f'device: {describe(dev)}')
     pr = Project(a.project)
     cfg = pr.clip_cfg('')
     cfg.setdefault('solve', {})
@@ -648,7 +649,7 @@ def main():
         lr_k = min((step + 1) / warm, 1.0) * .5 * (1 + math.cos(math.pi * frac))
         for g, l0 in zip(opt.param_groups, base):
             g['lr'] = l0 * lr_k
-        with torch.autocast('cuda', dtype=torch.bfloat16):
+        with autocast(dev):
             out = model(normalise(x).contiguous(memory_format=torch.channels_last), ctx)
         heat, dmap = (out[0], out[1]) if a.depth else (out, None)
         # the few cells round each joint weigh ten times the empty rest (else the maps learn "nowhere" first)

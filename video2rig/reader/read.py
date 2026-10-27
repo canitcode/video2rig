@@ -17,6 +17,7 @@ import torch
 
 from .. import clip as clipmod
 from ..common import Project
+from .device import autocast, pick_device
 from .net import SIZE, Reader, decode, letterbox, normalise
 
 
@@ -147,7 +148,7 @@ def _read(model, crops, dev, bs=16, corners=None, tta=0, tta_mode='heat', second
                         pa = pa + (cor[ta] - cor[tb])[:, None]
                         pn_ = pn_ + (cor[tn] - cor[tb])[:, None]
                     ctx = context_maps(pa * s + shift, prev_c[ta], pn_ * s + shift, prev_c[tn])
-                with torch.autocast('cuda', dtype=torch.bfloat16):
+                with autocast(dev):
                     out = model(x, ctx) if model.context else model(x)
                 heat, dmap = (out[0], out[1]) if isinstance(out, tuple) else (out, None)
                 heat = heat.float()
@@ -312,7 +313,7 @@ def main():
     ap.add_argument('--tta-mode', default='heat', choices=['heat', 'median'])
     a = ap.parse_args()
     t0 = time.time()
-    dev = torch.device('cuda')
+    dev = pick_device()
     pr = Project(a.project)
     model, ck = load_reader(Path(a.reader) if a.reader else pr.root / 'reader' / 'reader.pt', dev)
     labels = [kp[0] for kp in ck['keypoints']]
