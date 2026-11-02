@@ -9,7 +9,7 @@ game, with pictures of what the start picture and a good video look like and how
 
 The tool renders a start picture of your rigged model, an image-to-video generator animates it from that first frame
 ("he lifts the log onto his shoulder", "the giant staggers back"), and video2rig rebuilds that motion on your
-skeleton, frame by frame, with no hand-placed points. The result is an ordinary Blender Action you can edit, retime
+skeleton, the whole clip at once, with no hand-placed points. The result is an ordinary Blender Action you can edit, retime
 and export (glTF, FBX).
 
 The video generator is your choice: anything that makes a video **from a given first frame** and keeps it. We made

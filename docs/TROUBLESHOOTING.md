@@ -36,15 +36,15 @@ apart and visible.
 long, nothing can measure it: generate a clip with a second view.
 
 **Hands or arms tremble** - the joint reader reads every frame on its own, and on small parts its error from one
-frame to the next is several times the trunk's. A reader trained longer (`--steps 9000`) reads steadier. For a calm
-clip without fast moves, fit it again with a lower cutoff for slow bones, e.g.
-`python -m video2rig.reader.fit my_troll stagger --set lowpass_slow_hz=3` (it writes `out/stagger-reader.npz` for
-`import_motion.py`); below 4 Hz fast moves (a strike, a
-landing) start to lose their reach, so watch the review film. With the older road (`--old`): `solve.smooth_legs`
-(limbs) and `solve.smooth_body` in `creature.json`, higher = smoother.
+frame to the next is several times the trunk's. A reader trained longer (`--steps 9000`) reads steadier. The fit's
+smoothness can be raised for a calm clip: `python -m video2rig.reader.fit my_troll stagger --set w_acc=0.05` (it
+writes `out/stagger-reader.npz` for `import_motion.py`); too much and fast moves (a strike, a landing) lose their
+reach, so watch the review film. With the older road (`--old`): `solve.smooth_legs` (limbs) and `solve.smooth_body` in
+`creature.json`, higher = smoother.
 
 **The model goes through the floor / feet hover** - check that the start pose stands on the floor in the start frame.
-Feet in generated clips slide a little; pin them in the engine or with IK keys.
+Feet in generated clips slide a little, and the tool keeps what the video shows; pin them in the engine or with IK
+keys.
 
 **The Action plays too fast or too slow** - the timing is measured from motion; on a clip that barely moves it can
 guess wrong. Force it: `"fps": "24"` (or `"30-5"`, `"25-25"`) in `creature.json` and delete `work/<clip>/`.
@@ -68,14 +68,11 @@ fused into a solid skirt with the body, or tucked under it, are not traced: sepa
 lies against another limb. Join it to the body in Blender (or merge by distance) and run `autorig_build.py` again.
 
 **One arm stands still in the fit while the video swings it** (the far arm in a side panel) - a side panel cannot
-tell the twins apart, and the far arm, behind the body, is read where the near one is. The reader fit checks every
-limb point the other panel sees in front (`panel_pick`: "panels: limbs seen from behind the body ..." in the log)
-and weighs the guess down; a limb's swing of 1-2 frames the reading backs is kept (`despike_limbs`,
-`slow_p90_deg_s`). Still wrong: the other panel did not read the arm surely either (its confidence in
-`work/<clip>/reader.npz`); retrain the reader longer, or film the move with the view that sees that arm.
+tell the twins apart well, and the far arm, behind the body, may be read where the near one is. Start the clip from the
+colour suit (`blender/render_markers.py`, every limb its own colour) so the reader tells them apart. Still wrong: the other panel did not read the arm
+surely either (its confidence in `work/<clip>/reader.npz`); retrain the reader longer, or film the move with the view
+that sees that arm.
 
-**The two panels disagree on how far the body went** (the log: "panels: the body along the axis both panels see is
-N px apart") - the generator drew the move a little differently in each panel. Over 5% of the height the fit splits the
-difference per frame (`panel_drift`), so the limbs are judged against one body; the distance travelled is then the
-mean of the two. Much more than that (the boss's charge: 18%): look at the clip, one panel may have kept the body
-from leaving its frame.
+**The two panels disagree on how far the body went** - the generator drew the move a little differently in each
+panel; the fit takes the side view's heights first and the front view's left and right. Much more than a few
+percent of the height (`python -m video2rig check` fails the clip): generate it again.

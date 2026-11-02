@@ -56,17 +56,16 @@ The defaults in this table were tuned on a troll (two views), wolves (two views)
 
 ## The reader fit's settings
 
-The reader's fit has its own settings: `SETTINGS` in `video2rig/reader/fit.py`, each with a comment that says what
-it does and what it was measured on. They are not read from `creature.json`, and `run --set` does not reach them
-(it changes the older road's `solve.*`). To try one, fit the clip's reading again with it:
+The reader's fit has a few settings of its own: `SETTINGS` in `video2rig/reader/fit.py` (the number of steps, the
+robust scale of a miss, the weights of smoothness, of the pull toward the start pose and of the floor, the front
+view's weight on heights). They are not read from `creature.json`, and `run --set` does not reach them (it changes
+the older road's `solve.*`). To try one, fit the clip's reading again with it:
 
 ```powershell
-python -m video2rig.reader.fit my_troll stagger --set lowpass_hz=6
+python -m video2rig.reader.fit my_troll stagger --set w_acc=0.05
 ```
 
-`--set KEY=VALUE` can be given more than once (`true` / `false` for switches). It reuses the reading
-`work/stagger/reader.npz` that `run` or `check` made, so it takes about half a minute, and writes
-`work/stagger/fit-reader.npz` and `out/stagger-reader.npz` next to the run's own files (another name:
-`--tag=-soft`). Review it with `python -m video2rig review my_troll stagger --tag=-reader`. `--no-twins` keeps the
-readings as read (no left / right check). The defaults were measured on a bench of nine creatures; change one to
-fix a clip you have watched, and compare the review films.
+`--set KEY=VALUE` can be given more than once. It reuses the reading `work/stagger/reader.npz` that `run` or `check`
+made, so it takes about a minute, and writes `work/stagger/fit-reader.npz` and `out/stagger-reader.npz` next to the
+run's own files (another name: `--tag=-soft`). Review it with `python -m video2rig review my_troll stagger
+--tag=-reader`. Change one to fix a clip you have watched, and compare the review films.

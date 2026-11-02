@@ -7,7 +7,7 @@ Seedance does not always draw the same motion in both panels. Two orthographic p
 twice; where they cannot agree on one 3D point, there is no one true motion to fit, and no rule in the fit can make
 one. Measured (dev/DECISION-2026-10-11.md): bench clips agree on the body to 0.3-0.9% of the height, clean real clips
 to about 1.2%; the clips that drove the fit's one-clip rules were at 1.6-4.7%. Limbs disagree more on fast runs
-(2.1-3.6%): Seedance again, or the reader mixing up near and far legs (the fit's twin rules repair that): a warning.
+(2.1-3.6%): Seedance again, or the reader mixing up near and far legs: a warning.
 """
 import numpy as np
 
@@ -52,10 +52,17 @@ def check(project, clip, log=print):
     order = [names.index(v['name']) for v in views]
     uv, conf = np.asarray(uv)[:, order], np.asarray(conf)[:, order]
     height = cr.height * float(np.mean([np.linalg.norm(v['cam'].A[1]) for v in views if hasattr(v['cam'], 'A')]))
+    # judged as the fit will take it: a panel drawn a few frames behind the other put in step first (reader/sync.py)
+    from .reader.sync import align
+    uv, conf, sync = align(views, uv, conf, kps, log=lambda m: None)
     body, limbs = panel_misses(views, uv, conf, kps)
     frame0 = [a['frame0_iou'] for a in cr._clip[clip]['aligned']]
-    out = dict(clip=clip, frames=len(uv), height_px=round(height, 1), frame0_outline=frame0)
+    out = dict(clip=clip, frames=len(uv), height_px=round(height, 1), frame0_outline=frame0, panels_in_step=sync)
     msgs = []
+    if sync and sync['applied']:
+        msgs.append(f'NOTE: the {views[sync["panel"]]["name"]} panel was out of step (up to {sync["shift_max"]:.1f} '
+                    f'frames): matched frame by frame, the panels disagree by {sync["gap_px"]:.1f} -> '
+                    f'{sync["gap_matched_px"]:.1f} px')
     if body is not None:
         q = lambda x, p: round(float(np.nanpercentile(x, p)) / height, 4) if not np.isnan(x).all() else None
         out.update(body=q(body, 50), body_p90=q(body, 90), limbs=q(limbs, 50), limbs_p90=q(limbs, 90))
@@ -71,6 +78,7 @@ def check(project, clip, log=print):
     if min(frame0) < FRAME0_WARN:
         msgs.append(f'WARN: the start pose covers the first frame only {min(frame0):.2f}: is this clip from this '
                     f'project\'s start image?')
-    out['verdict'] = 'FAIL' if any(m.startswith('FAIL') for m in msgs) else 'WARN' if msgs else 'OK'
+    out['verdict'] = 'FAIL' if any(m.startswith('FAIL') for m in msgs) else \
+        'WARN' if any(m.startswith('WARN') for m in msgs) else 'OK'
     out['messages'] = msgs
     return out

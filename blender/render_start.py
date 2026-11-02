@@ -7,7 +7,7 @@ orthographic cameras (front | side, one 1920x1080 frame split in two halves) or 
 Options: --views front,side (default) | side | front | three-quarter | top (any two: side,top suits a long, low
 creature: a belly slider, a snake, a lizard); --widths 1280,640 (each view's width in px, adding up to 1920; default
 equal); --facing auto|+X|-X|+Y|-Y (which way the creature faces; auto = from its feet bones); --side left|right
-(which flank the side camera sees); --samples 64; --margin 1.8 (frame height / body height: room for raised arms and
+(which flank the side and three-quarter cameras see); --samples 64; --margin 1.8 (frame height / body height: room for raised arms and
 jumps); --margin-wide 1.45 (room around the body's length or width across a panel: a long creature is framed by
 its length, not only its height; off by default, so earlier start frames come out as before); --lead 0.18 (the side and top views look this share of their frame ahead of the
 body: room in front for a charge or a crawl forward); --hover 0.07 (a creature that floats: the floor lies this
@@ -182,7 +182,8 @@ def main():
     centre = (lo + hi) * .5
     target_z = floor.z + ortho_h * (.5 - .12)      # floor line 12 % above the bottom edge
     looks = {'front': -fwd, 'side': (-left if a.side == 'left' else left),
-             'three-quarter': (-fwd * math.cos(math.radians(40)) - left * math.sin(math.radians(40))),
+             'three-quarter': (-fwd * math.cos(math.radians(40))
+                               - (left if a.side == 'left' else -left) * math.sin(math.radians(40))),
              'top': Vector((0, 0, -1))}
     recs, paths = [], []
     x0 = 0

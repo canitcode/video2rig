@@ -1,12 +1,13 @@
 """The reader's road through one clip, as `python -m video2rig run` takes it when the creature has a reader
 (<project>/reader/reader.pt, made once by `python -m video2rig.reader.prepare`): every joint read in every frame
-and panel, the left/right check, the rig fitted, the motion file for blender/import_motion.py. About half a minute.
+and panel, the panels put in step, the rig fitted to the whole clip at once, the motion file for
+blender/import_motion.py. About a minute.
 
 The road is two steps, and the ground-truth bench (dev/bench/suite.py) calls the same two, so it measures exactly
 what ships:
     read_clip()     the reading, on the graphics card; cached in work/<clip>/reader<tag>.npz with the fingerprints
                     of the reader and of the clip (a new reader or a new clip is read again)
-    fit_reading()   creature_for -> fix_twins -> panels_agree -> fit_hidden, on the processor
+    fit_reading()   the creature, the panels in step, the whole clip fitted at once, on the processor
 """
 import hashlib
 import json
@@ -87,35 +88,21 @@ def read_clip(project, clip, reader=None, cpu=False, tag='', log=print, cache=Tr
     return uv, conf, kps, names
 
 
-def fit_reading(project, clip, cfg, uv, conf, kps, view_names, s=None, log=print, dep=None):
-    """The rig fitted to a reading, as `run` does it: the clip's creature (a jaw the reader sees is fitted too),
-    the panels put in the creature's order, the left/right check, the panels made to agree, the fit.
-    Returns dict(creature, params, report, uv, conf, swaps); uv and conf as the fit used them.
-    dep (T, V, K): a depth reader's depths (stage R), fitted as one more measurement; a point the left/right check
-    hands to its twin keeps no depth (it was read for the other limb).
-
-    The fit runs with one processor thread for numpy's linear algebra: with the machine's default (16 here) the
-    sums come out in another order, a fit on a knife's edge takes another branch (the alien's pirouette, combo01
-    frames 97-148: up to 175 deg apart), so a clip gave different motions on different computers; and the small
-    matrices of the fit ran 2.4 times slower on 16 threads (111 s against 46 s for that clip)."""
-    from threadpoolctl import threadpool_limits
-    from .fit import SETTINGS, creature_for, fit_hidden, fix_twins, panels_agree
+def fit_reading(project, clip, cfg, uv, conf, kps, view_names, s=None, log=print):
+    """The rig fitted to a reading, as `run` does it: the clip's creature (a jaw the reader sees is fitted too), the
+    panels put in the creature's order and in step (sync.py), the whole clip fitted at once (fit.py). Returns
+    dict(creature, params, report, uv, conf, sync); uv and conf as the fit used them."""
+    from .fit import SETTINGS, creature_for, fit_clip
+    from .sync import align
     s = SETTINGS if s is None else s
-    with threadpool_limits(limits=1):
-        cr, narrow = creature_for(project, cfg, kps)
-        names = [v['name'] for v in cr.views(clip)]
-        order = [list(view_names).index(n) for n in names]
-        uv, conf = np.asarray(uv)[:, order].copy(), np.asarray(conf)[:, order].copy()
-        before = uv.copy()
-        uv, swaps = fix_twins(cr, clip, uv, conf, kps, log=log, s=s)
-        if dep is not None:
-            dep = np.asarray(dep, float)[:, order].copy()
-            T = min(len(dep), len(uv))
-            moved = np.linalg.norm(uv[:T] - before[:T], axis=-1) > 1e-6
-            dep[:T][moved] = np.nan
-        uv, conf = panels_agree(cr, clip, uv, conf, kps, s=s, log=log)
-        P, rep = fit_hidden(cr, clip, uv, conf, kps, s=s, log=log, narrow=narrow, dep=dep)
-    return dict(creature=cr, params=P, report=rep, uv=uv, conf=conf, swaps=swaps)
+    cr, narrow = creature_for(project, cfg, kps)
+    names = [v['name'] for v in cr.views(clip)]
+    order = [list(view_names).index(n) for n in names]
+    uv, conf = np.asarray(uv)[:, order].copy(), np.asarray(conf)[:, order].copy()
+    uv, conf, sync = align(cr.views(clip), uv, conf, kps, log=log)
+    P, rep = fit_clip(cr, clip, uv, conf, kps, s=s, log=log, narrow=narrow)
+    rep['panels_in_step'] = sync
+    return dict(creature=cr, params=P, report=rep, uv=uv, conf=conf, sync=sync)
 
 
 def run(project, clip, cfg, tag='', log=print, cpu=False):

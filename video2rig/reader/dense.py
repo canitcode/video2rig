@@ -18,8 +18,8 @@ along, so one reader reads everything from the window.
         [--locator reader/reader-pts.pt] [--tag x]
         -> work/<clip>/dense<tag>/reading.npz (uv, conf, dep), dense.npz (the cells), sheet.jpg
     python -m video2rig.reader.dense fit <project> <clip> [--read dense<tag>] [--init fx_direct] [--tag x]
-        -> work/<clip>/fx_dense<tag>/params.npy, motion.npz (the fit as fitted) and fx_dense<tag>_sm (the mocap
-           clean-up of the tool); a bench clip (gt_*) is scored against its truth
+        -> work/<clip>/fx_dense<tag>/params.npy, motion.npz (the fit as fitted); a bench clip (gt_*) is scored
+           against its truth
 """
 import argparse
 import json
@@ -524,7 +524,7 @@ def read(a):
 # ----- the fit --------------------------------------------------------------------------------------------------
 def fit(a):
     from scipy.optimize import least_squares
-    from .fit import SETTINGS, clean_motion, creature_for
+    from .fit import creature_for
     t0 = time.time()
     pr = Project(a.project)
     clip = a.clip
@@ -655,20 +655,13 @@ def fit(a):
     print(f'DENSE fit {clip}: {T} frames x {V} panels in {time.time() - t0:.0f} s, {int(np.median(used))} cells a frame '
           f'(median), the sure points missed by {np.nanmedian(miss):.1f} px (median), worst frame {np.nanmax(miss):.1f} px'
           + (f'; the 1:1 start won in {n_init} frames' if init is not None else '') + f' -> {fx}', flush=True)
-    uv4, conf4 = rd['uv'][:T][:, order], rd['conf'][:T][:, order]
-    lo_, hi_, _ = cr.bounds(clip)
-    Psm, _, _ = clean_motion(cr, clip, P, uv4, conf4, kps, lo_, hi_, s=SETTINGS, log=lambda m: None)
-    fxs = pr.work(clip) / f'fx_dense{a.tag}_sm'
-    fxs.mkdir(parents=True, exist_ok=True)
-    np.save(fxs / 'params.npy', Psm)
-    cr.export_motion(clip, Psm, str(fxs / 'motion.npz'))
     gt_path = pr.root / 'gt' / clip[3:] / 'gt.npz'
     if clip.startswith('gt_') and gt_path.exists():
         import sys
         sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'dev' / 'bench'))
         from score import score
         gt = np.load(gt_path)
-        for name, Q in (('dense', P), ('dense + clean-up', Psm)):
+        for name, Q in (('dense', P),):
             sc = score(cr, Q, gt)
             print(f'DENSE score {clip} {name}: {sc["fitted_median_deg"]:.2f} deg a bone (p90 {sc["fitted_p90_deg"]:.2f}), '
                   f'limbs {sc["limbs_body_median_deg"]:.2f}', flush=True)

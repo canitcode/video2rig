@@ -12,11 +12,15 @@ pixels, between SIDE_MIN and SIDE_MAX input pixels.
     python -m video2rig.reader.train <project> --crops --init reader/reader.pt --out reader/reader-crops.pt
     reading: road.read_clip(..., crops=True) / read.read_frames(..., crop_model=...)
 """
+import re
+
 import numpy as np
 import torch
 import torch.nn.functional as F
 
 from .net import SIZE
+
+LOOSE = re.compile(r'(tail|(^|[^a-z])ear([._0-9]|$))', re.I)     # tails and ears: no limb ends
 
 CROP_K = 1.6
 SIDE_MIN, SIDE_MAX = 72.0, 320.0
@@ -28,7 +32,6 @@ def end_groups(cr, kps):
     """[(name, [keypoint indices], reach)] of every limb end: the keypoints on a limb chain's last bone and below it,
     and the length of the chain's last two bones (armature units). Tails and ears are not limbs here."""
     from . import side_of
-    from .fit import LOOSE
     rig = cr.rig
     out = []
     for ch in cr.limb_chains(as_list=True):

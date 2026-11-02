@@ -274,9 +274,8 @@ python -m video2rig run my_beast roar
 ```
 
 About a minute for a 5 s clip. It finds the clip's real frame rate (generated clips are often not what their file says),
-lines up the cameras on the first frame, reads every joint in every frame and both views, decides left from right
-where the side view is unsure, fits your skeleton to the joints frame by frame and cleans the motion (one-frame
-spikes, jitter). The result is `my_beast/out/roar.npz` and a report in `my_beast/work/roar/report.json`.
+lines up the cameras on the first frame, reads every joint in every frame and both views, and fits your skeleton
+to the joints of the whole clip at once. Nothing is added after the fit: the motion is what the video shows. The result is `my_beast/out/roar.npz` and a report in `my_beast/work/roar/report.json`.
 
 No NVIDIA card at hand for this step: `--cpu` reads on the processor (a few minutes instead of seconds).
 

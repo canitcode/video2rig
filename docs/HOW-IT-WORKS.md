@@ -34,42 +34,32 @@ to those joints.
    paws), and an error that does not repeat between the copies shrinks in their average (the arms' frame-to-frame
    error -34 to -47% on 30 clips). Half a minute on the graphics card for a 5 s clip. A prop is
    read as a few points of its own (a log's ends, a round stone's middle) and fitted as a rigid body.
-4. **Left / right check.** A side view can take the near leg for the far one; the front view sees them apart. For
-   each pair of twin limbs the side view's readings are kept or swapped, whichever lets both views agree on one 3D
-   point per joint. It is decided along the whole clip, not frame by frame: every change of mind costs, so one
-   unclear frame does not swap a leg. A reading that jumps to the twin limb for a frame is put back, a short unsure
-   stretch (a hand behind the body) is bridged between the sure readings around it, and a far limb's guess that the
-   other view contradicts counts little.
-5. **Fit, frame by frame.** In every frame, the pose of the rig whose joints land where the reader saw them in every
-   view: each reading weighted by how sure the reader was, far misses barely pulling (they are wrong readings),
-   within the rig's joint ranges (knees and elbows bend one way), nothing under the floor, a planted foot flat. Each
-   frame starts from the frame before (frame 0 from the start pose, which the clip's first frame shows) and from a
-   few other starts (the limbs in the start pose, the limbs where both views read them); the best fit wins. A jaw
-   the reader sees opens for a bite. The fit runs on one processor thread, so a clip gives the same motion on every
-   computer.
-6. **Clean-up**, as in motion capture: one-frame spikes smoothed unless the reading backs them (a galloping paw
-   really turns back 15-20 degrees in one frame), the body's turn smoothed as a turn, and a low-pass at 8 Hz. A bone
-   that moves slowly all through the clip gets 4 Hz, or 5 Hz if it still has one fast moment (a landing, a strike):
-   the reader reads each frame on its own and its frame-to-frame error shows most on small parts (hands, elbows,
-   paws) as a tremble. A limb end the low-pass put under the floor bends out by the least change to the smoothed
-   pose.
-7. **Feet, steps and loose parts.** Seedance often draws a walk or a run on the spot: the body stays and the standing
-   feet slide back, in the video too. When the low feet slide back the same way for most of the clip, the body is
-   moved forward by what they slide, so the creature walks and its feet stand (`steps`). Then every foot that is down
-   and still is pinned where it stands by the least change of its own leg (`foot_lock`; the heel may lift). Last,
-   tails and ears follow through a damped spring instead of shaking with the reading (`springs`; not wings, whose
-   flap is the motion itself). Each is one switch (`--set steps=false` ...).
-   A walk moved by its steps travels where the video stays, so in the review film its outline drifts off the video's.
-8. **Arms out of the body.** A hand one camera cannot see is guessed, and the guess went into the creature's own
-   trunk (a centaur's sword hand in its horse's flank). Points on every free limb (its keypoints, the middle of each
-   bone, and the blade of what a hand holds) are kept out of capsules round the trunk's bones, in the fit and once
-   more after the clean-up (`no_self_pass`).
+4. **Panels in step.** A video model sometimes plays one panel ahead of the other. Both panels see a joint's
+   height, so the two panels are matched frame by frame on their joints' heights (dynamic time warping); when that
+   cuts how far they disagree by 15% or more, the front panel's readings are moved onto the side panel's frames.
+5. **Fit, the whole clip at once.** One optimisation over all frames together finds the pose of every frame whose
+   joints land where the reader saw them in every view: each reading weighted by how sure the reader was, within the
+   rig's joint ranges (knees and elbows bend one way), smooth from frame to frame (the joints' acceleration and the
+   angles' change from frame to frame cost a little), a light pull toward the start pose, and the feet not under the
+   floor. It starts from the clip itself: every joint placed in 3D where its two readings meet, the body turned by
+   the points on its root bone, every bone pointed at its next joint. A miss counts robustly, its scale narrowing
+   from 40 px to 6 px: at first a joint far from its reading still pulls the pose out of a wrong start, at the end a
+   wrong reading barely pulls. Heights come mostly from the side view; the front view foreshortens a lifted leg and
+   mainly gives left and right. Left and right come from the reader as read: start the clip from the colour suit
+   (`blender/render_markers.py`, every limb its own colour) and it does not mix them up. A jaw the reader sees opens for a bite. About a minute for a 5 s clip, on one processor
+   thread, so a clip gives the same motion on every computer.
+
+Nothing is added after the fit: no filter, no pinned feet, no travel by steps, no springs. The motion is what the
+clip shows and the reader reads. A walk Seedance draws on the spot stays on the spot; give it travel in the game
+(root motion from the standing feet) if it needs any.
 
 Then the motion is written for Blender: every bone's rotation at the clip's real times, the root's position and every
 prop's matrix.
 
-On the bench (clips rendered from known motions of nine creatures, through their own cameras) the fitted bones point
-within about 3 degrees of the truth (median per bone). The older road below gave 21 degrees on the wolf's gallop.
+On nine real clips of a turkey, against the same readings, this fit lands the keypoints closer to the side view's sure
+readings than the earlier frame-by-frame fit with its clean-up passes did, in all nine, and they shake less in all
+nine (1.1 to 13 times). On calm clips it misses the front view's sure readings by up to 2 px more: their heights
+count a quarter.
 
 Before the fit, `python -m video2rig check` uses the same reading to measure how far the two views disagree. When
 the generator drew a different motion in each view (the body more than 1.5% of its height apart), no fit can make one
@@ -96,8 +86,7 @@ props) are followed through the clip by BootsTAPIR (Google DeepMind, Apache 2.0)
 frames finds the joint angles that put every tracked point on its track, while the model stays inside the video's
 silhouette, joints stay in range and the motion stays smooth; when a body rolls over and the outline is lost, it
 tries the body turned over. It needs no training, but a clip takes 1-3 minutes of tracking and 5-15 of solving, it
-has many hand settings (`solve.*`, docs/CONFIG.md), and on the bench's wolf gallop it was 21 degrees per bone off
-(the reader: about 3).
+has many hand settings (`solve.*`, docs/CONFIG.md), and on the bench's wolf gallop it was 21 degrees per bone off.
 
 ## Why not the usual ways
 

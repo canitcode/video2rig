@@ -183,16 +183,16 @@ With `reader/reader.pt` in the project, `run` takes the reader's road. What happ
 | --- | --- | --- |
 | prepare | frames, silhouettes, the clip's real frame rate, camera alignment on frame 0 | 0.5-1 min |
 | read | every joint in every frame and view, with how sure the reader is (graphics card; cached in `work/<clip>/reader.npz`, read again only when the reader or the clip changes) | about 7 s |
-| left / right | where the side view may have taken the near leg for the far one, the other view decides | seconds |
-| fit | the rig fitted frame by frame to the joints, then cleaned up (one-frame spikes, a low-pass) | about half a minute (one processor thread) |
+| in step | a front panel the generator played ahead of or behind the side panel is matched onto it frame by frame: its readings, pictures and outlines (`reader/sync.py`; the log says by how many frames) | seconds |
+| fit | the rig fitted to the joints of the whole clip at once; nothing added after it | about a minute (one processor thread) |
 | export | `out/<clip>.npz` + `work/<clip>/report.json` | seconds |
 
 Options: `--cpu` reads on the processor (no graphics card: a few minutes instead of seconds), `--tag NAME` adds a
 suffix to the fit and motion files (write `--tag=-try` when it starts with a dash), `--old` takes the older road
 below even when the creature has a reader.
 
-The log says how sure the reading was, in how many frames the left / right check gave a leg's readings back to it,
-and how far the fitted joints miss the readings (median px; per frame in `work/<clip>/fit-report.json`). The report
+The log says how sure the reading was and how far the fitted joints miss the readings (mean px of all readings and
+median px of the sure ones, per view; also in `work/<clip>/fit-report.json`). The report
 gives the outline match with the video per view (0.9+ is good), the worst frames, the largest twist about a bone and
 the largest joint jump in one frame. Numbers only point where to look. Look at the result:
 
@@ -204,7 +204,7 @@ The review film shows the video, the fit through the same camera, both outlines 
 from a three-quarter view the video never had: that is where a wrong depth or a hidden limb shows. A fit made with
 `--tag` is reviewed with the same tag: `python -m video2rig review my_troll stagger --tag=-try`.
 
-To fit the same reading again with another setting (about half a minute; the reading is reused):
+To fit the same reading again with another setting (about a minute; the reading is reused):
 `python -m video2rig.reader.fit my_troll stagger --set KEY=VALUE` ([CONFIG.md](CONFIG.md), "The reader fit's
 settings").
 
