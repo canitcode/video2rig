@@ -26,6 +26,7 @@ from .raster import load_textures, rasterize, render
 from .rig import Rig
 
 FINGER = re.compile(r'(finger|thumb|index|middle|ring|pinky|pinkie|little|eye|jaw|tongue|teeth|_end$|end$)', re.I)
+FOOT_LOW = .10      # a limb's branching bone this close to the floor (share of the height, start pose) is its foot
 KNEE = re.compile(r'((^|[^p])leg(?!.*up)|shin|calf|knee|lowerleg|lower_leg)', re.I)
 ELBOW = re.compile(r'(forearm|fore_arm|lowerarm|lower_arm|elbow)', re.I)
 LIMB = re.compile(r'(arm|leg|hand|foot|toe|shin|thigh|calf|forearm|knee|elbow|wrist|ankle|paw|hoof|wing)', re.I)
@@ -109,7 +110,9 @@ class Creature:
 
     # ----- body ------------------------------------------------------------------------------------------------
     def find_facing(self, X0):
-        """The way the character faces, in armature space: from the feet (heel to toe), else creature.json."""
+        """The way the character faces, in armature space: from the feet (heel to toe; a hoofed animal's hooves, whose
+        Foot bones are the near-vertical cannons: the goat's four cannons alone read it facing backward, 2026-10-30),
+        else creature.json."""
         if 'facing' in self.cfg:
             f = np.array({'+X': (1, 0, 0), '-X': (-1, 0, 0), '+Y': (0, 1, 0), '-Y': (0, -1, 0)}[self.cfg['facing']], float)
             M = np.array(self.data['armature_world'], float)
@@ -119,7 +122,7 @@ class Creature:
         H, T = rig.bone_points(self.p0(None))
         v = np.zeros(3)
         for j, n in enumerate(rig.names):
-            if re.search(r'foot|toe', n, re.I):
+            if re.search(r'foot|toe|hoof', n, re.I):
                 d = T[j] - H[j]
                 v += d - (d @ self.up) * self.up
         if np.linalg.norm(v) < 1e-9:
@@ -394,8 +397,11 @@ class Creature:
     def limb_chains(self, as_list=False):
         """Limbs by the skeleton's shape, for rigs whose bone names say nothing: a chain of bones that leaves a hub
         (a bone with three or more children: a pelvis, a chest, an insect's or spider's body) and runs on without
-        branching (end bones and fingers aside), with skin on at least two of its bones. A set of bone ids, or the
-        chains (hub side first) with as_list."""
+        branching (end bones and fingers aside), with skin on at least two of its bones. A foot that branches into its
+        toes (a bird's front and hind toes, a paw's claws: every child an unbranched run of bones, the foot within
+        FOOT_LOW of the height above the floor in the start pose) ends its leg; before, the branch threw the whole leg
+        out and the turkey stood on no legs, so nothing pinned its feet. A set of bone ids, or the chains (hub side
+        first) with as_list."""
         rig = self.rig
         mass = np.zeros(rig.nb)
         body = self.idx[:, 0] < rig.nb
@@ -403,6 +409,16 @@ class Creature:
         skinned = mass > .002 * mass.sum()
         kids = {j: [k for k in range(rig.nb) if rig.parents[k] == j and not FINGER.search(rig.names[k])]
                 for j in range(rig.nb)}
+
+        def unbranched(j):
+            while len(kids[j]) == 1:
+                j = kids[j][0]
+            return not kids[j]
+
+        low = set()
+        if hasattr(self, 'floor') and hasattr(self, 'height'):
+            _, tails = rig.bone_points(self.p0(None))
+            low = {j for j in range(rig.nb) if tails[j] @ self.up - self.floor <= FOOT_LOW * self.height}
         chains = []
         for hub in (j for j in range(rig.nb) if len(kids[j]) >= 3):
             for c in kids[hub]:
@@ -412,7 +428,8 @@ class Creature:
                     if len(kids[j]) != 1:
                         break
                     j = kids[j][0]
-                if len(kids[j]) <= 1 and sum(bool(skinned[b]) for b in chain) >= 2:
+                foot = len(kids[j]) >= 2 and j in low and len(chain) >= 2 and all(unbranched(k) for k in kids[j])
+                if (len(kids[j]) <= 1 or foot) and sum(bool(skinned[b]) for b in chain) >= 2:
                     chains.append(chain)
         return chains if as_list else {b for ch in chains for b in ch}
 

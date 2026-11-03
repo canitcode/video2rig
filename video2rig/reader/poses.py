@@ -1,6 +1,7 @@
 """Training poses for the joint reader: the creature's own rig in random poses within the ranges the fit allows
 (Creature.bounds), the body turned and shifted a little as Seedance's creatures move, or placed anywhere the start
-frame leaves it room, standing on the floor or in the air; the jaw opened in half of them (the fit does not move
+frame leaves it room, standing on the floor or in the air, or lying (LIE: on the belly with the legs folded, or on
+its side); the jaw opened in half of them (the fit does not move
 it, but a bite shows it open); in about half, the bones also move over the frame (quats_a -> quats_b), which the
 renders turn into motion blur, in some of those the whole body lunging or spinning.
 
@@ -32,6 +33,9 @@ ROAM = .5                          # share of the poses placed anywhere in the s
 LUNGE = .3                         # share of the moving poses in which the whole body lunges, charges or spins
 TURN = 1.2                         # the fastest whole-body turn in one frame, radians (69 degrees: 4.6 turns a second)
 TRAVEL = .15                       # the fastest whole-body travel in one frame, a share of the body's longest side
+LIE = .12                          # share of the poses lying down: on the belly with the standing legs folded under
+                                   # it (a cow asleep), or on its side (dead, or rolling); standing poses alone never
+                                   # showed the reader a body on the floor
 
 
 def axis_rot(axis, angle):
@@ -171,12 +175,18 @@ def sample(cr, n, seed=0, log=print):
     params = np.zeros((n, rig.n))
     reach = reacher(cr, lo, hi, coords, idx, wts)
     place = roamer(cr, coords, idx, wts)
+    leg_hinges = {rig.index(rig.names[j], cr.bend_axis(j)) for j in cr.legs if rig.names[j] in cr.hinge}
     for i in range(n):
         calm = rng.random() < .3                      # a third near the stance: walks and idles are common
+        lie = None if calm or rng.random() >= LIE / .7 else ('belly' if rng.random() < .5 else 'side')
         k = .4 if calm else 1.0
         p = p0.copy()
         for c, role, sd in chans:
             v = rng.uniform(lo[c], hi[c]) if role == 'hinge' else p0[c] + rng.normal(0.0, sd)
+            if lie == 'belly' and c in leg_hinges:
+                # folded: from half way to fully bent, toward the end of its range far from straight
+                bent = hi[c] if hi[c] - p0[c] > p0[c] - lo[c] else lo[c]
+                v = p0[c] + rng.uniform(.5, 1.0) * (bent - p0[c])
             p[c] = np.clip(p0[c] + k * (v - p0[c]), lo[c], hi[c])
         p = reach(p, rng)
         # the whole body: turned about its centre (yaw round, pitch as in a jump or a dive, a little roll)
@@ -194,6 +204,12 @@ def sample(cr, n, seed=0, log=print):
             # reader never saw its side or its back and the fit stayed facing the camera through the spin)
             yaw = rng.uniform(-np.pi, np.pi)
         roll = np.clip(rng.normal(0, np.radians(4)), -np.radians(12), np.radians(12)) * k
+        if lie == 'belly':
+            pitch = np.clip(rng.normal(0, np.radians(8)), -np.radians(20), np.radians(20))
+            roll = rng.normal(0, np.radians(10))
+        elif lie == 'side':
+            pitch = rng.normal(0, np.radians(10))
+            roll = rng.choice([-1.0, 1.0]) * rng.uniform(np.radians(65), np.radians(105))
         Q = axis_rot(up, yaw) @ axis_rot(lat, pitch) @ axis_rot(fwd, roll)
         j = rig.root
         par = rig.parents[j]
@@ -203,7 +219,7 @@ def sample(cr, n, seed=0, log=print):
         p[:3] += cen + Q @ (P[j] - cen) - P[j]
         # on the floor (or up to a third of its height in the air), shifted a little round its place
         X = rig.skin(p, coords, idx, wts)
-        jump = 0.0 if rng.random() < .7 else rng.uniform(0, .3) * cr.height
+        jump = 0.0 if lie or rng.random() < .7 else rng.uniform(0, .3) * cr.height
         p[:3] += up * (cr.floor - (X @ up).min() + jump)
         p = place(p, rng)
         place_props(cr, p, rng)

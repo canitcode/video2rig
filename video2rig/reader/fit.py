@@ -37,7 +37,10 @@ SETTINGS = {
     'lr_drop_at': .7,          # from this share of the steps on, the step sizes times lr_drop
     'lr_drop': .3,
     'front_height': .25,       # the front panel's weight on the up-down axis (the side panel's is 1)
-    'w_acc': .02,              # every keypoint's acceleration from frame to frame, per px^2
+    'w_acc': .005,             # every keypoint's acceleration from frame to frame, per px^2. At .02 a cow's canter kept
+                               # its legs near vertical while the video swung them far (side panel's sure readings
+                               # missed by 12.7 px; at .005 3.0), and the walk and the fall fitted closer too
+                               # (3.3 / 1.7, 3.8 / 2.5 px against 3.5 / 2.1, 4.7 / 3.7), their acceleration up a quarter
     'w_vel': 2.0,              # every joint angle's (and the body turn's) change from frame to frame, per rad^2
     'w_rest': .05,             # pull of every joint angle toward the start pose, per rad^2
     'w_floor': .5,             # a foot's keypoint under the floor, per px^2
@@ -96,8 +99,11 @@ def front_panel(views):
 
 def triangulate(views, uv, conf, X0, front_height):
     """(T, K, 3) every keypoint where its readings in the panels meet (least squares in pixels, each panel weighted
-    by how sure its reading is, the front panel's up-down axis by front_height), held lightly at its start-pose place
-    X0 (K, 3) so a point read by one panel only stays solvable. None with one panel."""
+    by the square of how sure its reading is, as in the fit, the front panel's up-down axis by front_height), held at
+    its start-pose place X0 (K, 3) where no panel is sure of it. The reader says "not here" for a joint a panel cannot
+    see (low confidence) and puts that reading anywhere: weighted by the confidence itself, a cow's spine, hidden from
+    the front, was placed up to 300 px aside, the body turned on it and the spine fitted at the end of its range for
+    the whole walk. None with one panel."""
     if len(views) < 2:
         return None
     T, V, K = conf.shape
@@ -106,7 +112,7 @@ def triangulate(views, uv, conf, X0, front_height):
     r = np.zeros((T, K, 3))
     for v, view in enumerate(views):
         cam = view['cam']
-        w = np.clip(conf[:, v], 1e-3, 1.0)
+        w = np.clip(conf[:, v], 1e-3, 1.0) ** 2
         rows_w = [w, w * (front_height if v == fi else 1.0)]
         if cam.type == 'ortho':
             for i in (0, 1):
@@ -127,7 +133,7 @@ def triangulate(views, uv, conf, X0, front_height):
                 N += rows_w[i][..., None, None] * np.einsum('tki,tkj->tkij', a, a)
                 r += (rows_w[i] * y)[..., None] * a
     k = float(np.mean([v['cam'].px_per_unit for v in views]))
-    hold = 1e-3 * k ** 2
+    hold = 1e-2 * k ** 2              # a reading at confidence 0.1 pulls as much as the start pose
     N += hold * np.eye(3)
     r += hold * X0[None]
     return np.linalg.solve(N, r[..., None])[..., 0]

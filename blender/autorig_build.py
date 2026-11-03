@@ -34,6 +34,9 @@ def args():
     ap = argparse.ArgumentParser(prog='autorig_build.py')
     ap.add_argument('--work', required=True)
     ap.add_argument('--no-sheet', action='store_true')
+    ap.add_argument('--solid', action='store_true', help='bone heat on the watertight voxel copy even when the mesh '
+                    'itself gives a solution (a Tripo goat: heat reached every vertex, yet its hoof bones held the whole '
+                    'lower leg and the spine leaked into the shins)')
     return ap.parse_args(argv)
 
 
@@ -152,7 +155,7 @@ def solid_copy(me, voxel):
     return new
 
 
-def heat_on_main(obj, arm, chains):
+def heat_on_main(obj, arm, chains, solid=False):
     """Bone heat on the object's big connected pieces; small loose parts from the limb they touch most."""
     me = obj.data
     part = loose_parts(me)
@@ -202,7 +205,7 @@ def heat_on_main(obj, arm, chains):
     # watertight copy of the piece built from voxels (1% of its size), and each vertex takes the weights of the copy's
     # nearest point below. Only when heat reached under half the piece: every mesh it solved keeps its own weights
     reached = float((W_tmp.sum(1) > 1e-6).mean()) if len(W_tmp) else 0.0
-    if reached < .5:
+    if reached < .5 or solid:
         voxel = .01 * max(tmp.dimensions)
         print(f'AUTORIG_HEAT bone heat reached {reached * 100:.0f}% of {obj.name}\'s main piece (inner walls or holes '
               f'hide the bones from the skin): heat on a solid copy of {voxel * 100:.1f} cm voxels', flush=True)
@@ -401,7 +404,7 @@ def main():
             k += 1
     report = {}
     for o in meshes:
-        W, names, part, main = heat_on_main(o, arm, chains)
+        W, names, part, main = heat_on_main(o, arm, chains, solid=a.solid)
         W = clean(W, names, roles, chains)
         o.vertex_groups.clear()
         groups = {n: o.vertex_groups.new(name=n) for n in names}
