@@ -28,6 +28,8 @@ from .rig import Rig
 FINGER = re.compile(r'(finger|thumb|index|middle|ring|pinky|pinkie|little|eye|jaw|tongue|teeth|_end$|end$)', re.I)
 FOOT_LOW = .10      # a limb's branching bone this close to the floor (share of the height, start pose) is its foot
 KNEE = re.compile(r'((^|[^p])leg(?!.*up)|shin|calf|knee|lowerleg|lower_leg)', re.I)
+# a thigh, whatever the naming: Mixamo's LeftUpLeg, Rigify's thigh.L, Blender's and VRM's upper_leg.L / leftUpperLeg
+THIGH = re.compile(r'(up(per)?[_ .-]?leg|thigh)', re.I)
 ELBOW = re.compile(r'(forearm|fore_arm|lowerarm|lower_arm|elbow)', re.I)
 LIMB = re.compile(r'(arm|leg|hand|foot|toe|shin|thigh|calf|forearm|knee|elbow|wrist|ankle|paw|hoof|wing)', re.I)
 SPINE = re.compile(r'(spine|chest|neck|torso|back|abdomen)', re.I)
@@ -50,7 +52,7 @@ RANGES = [
     (re.compile(r'neck', re.I), (45, 50, 35)),
     (re.compile(r'(^|[^a-z])head$', re.I), (60, 50, 35)),  # a howling wolf raised its head past 45 for most of the clip
     (re.compile(r'(shoulder|clavicle|collar)', re.I), (40, 20, 40)),
-    (re.compile(r'(upleg|up_leg|thigh)', re.I), (130, 45, 60)),
+    (THIGH, (130, 45, 60)),
 ]
 # A leg the creature stands on, by its shape (whatever its bones are called: Paw, Hoof, Scapula, UpperArm, femur):
 # twist about the bone and the swing out of the leg's plane, degrees from the start pose. Without them a wolf's
@@ -61,6 +63,12 @@ LEG_TWIST, LEG_SIDE = 30, 40
 UPPER_ARM = re.compile(r'(^|[^a-z]|left|right|upper)arm([._]|$)', re.I)
 ARM_BACK = 75
 PAW_BACK = 20       # a paw's (wrist's, hock's) bend against its own way, degrees from the start pose
+
+
+def is_knee(name):
+    """A bone whose name says knee (a shin, a calf, a lower leg) and not thigh: a thigh named ...Leg (UpperLeg,
+    upper_leg) matches KNEE too, and hinged as a knee it is held to one way and the leg flips when it folds."""
+    return bool(KNEE.search(name)) and not THIGH.search(name)
 
 
 class Creature:
@@ -162,8 +170,7 @@ class Creature:
             if isinstance(cfg, dict):
                 way = cfg.get(name)
             elif cfg == 'auto':
-                way = 'back' if KNEE.search(name) and not re.search(r'upleg|up_leg|thigh', name, re.I) else \
-                    'front' if ELBOW.search(name) else None
+                way = 'back' if is_knee(name) else 'front' if ELBOW.search(name) else None
             if way is None:
                 continue
             p = self.p0(None)
@@ -290,8 +297,7 @@ class Creature:
         if par < 0:
             return None
         pname = rig.names[par]
-        way = -1.0 if ELBOW.search(pname) else 1.0 if KNEE.search(pname) and not re.search(r'upleg|up_leg|thigh', pname,
-                                                                                              re.I) else None
+        way = -1.0 if ELBOW.search(pname) else 1.0 if is_knee(pname) else None
         if way is None:
             return None
         p = self.p0(None)
