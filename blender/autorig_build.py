@@ -155,6 +155,28 @@ def solid_copy(me, voxel):
     return new
 
 
+def drop_small_pieces(obj, share=.02):
+    """Delete the mesh's loose pieces under `share` of its vertices (the largest always stays). On the watertight copy
+    of a model with fur cards on its skin (a Tripo werewolf: 1212 pieces), the cards voxelise into small shells
+    floating round the body, and bone heat found no solution on the whole copy (issue #2). Their vertices take the
+    weights of the nearest point of what stays, as every vertex of the copy's source does."""
+    part = loose_parts(obj.data)
+    sizes = np.bincount(part)
+    drop = (sizes[part] < share * len(part)) & (part != int(np.argmax(sizes)))
+    if not drop.any():
+        return
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='DESELECT')
+    bpy.ops.object.mode_set(mode='OBJECT')
+    for i in np.nonzero(drop)[0]:
+        obj.data.vertices[int(i)].select = True
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.delete(type='VERT')
+    bpy.ops.object.mode_set(mode='OBJECT')
+    print(f'AUTORIG_HEAT the watertight copy: {len(np.unique(part[drop]))} small loose pieces dropped '
+          f'({int(drop.sum())} vertices)', flush=True)
+
+
 def heat_on_main(obj, arm, chains, solid=False):
     """Bone heat on the object's big connected pieces; small loose parts from the limb they touch most."""
     me = obj.data
@@ -224,6 +246,7 @@ def heat_on_main(obj, arm, chains, solid=False):
         bpy.context.view_layer.objects.active = tmp
         tmp.select_set(True)
         bpy.ops.object.modifier_apply(modifier=rem.name)
+        drop_small_pieces(tmp)
         tmp.select_set(True)
         arm.select_set(True)
         bpy.context.view_layer.objects.active = arm
@@ -249,6 +272,10 @@ def heat_on_main(obj, arm, chains, solid=False):
     # every vertex: its own weights if it is on the main part (and heat reached it), else the nearest main vertex's
     co = np.array([v.co for v in me.vertices])
     ok = keep[~empty]
+    if not len(ok):
+        raise SystemExit(f'autorig_build: bone heat reached no vertex of {obj.name}, not even on its watertight copy. '
+                         'The bones must lie inside the skin: check skeleton-sheet.png, and that the model and the '
+                         'skeleton have the same place and size')
     kd = KDTree(len(ok))
     for k, i in enumerate(ok):
         kd.insert(Vector(co[i]), k)
