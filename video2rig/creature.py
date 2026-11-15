@@ -606,9 +606,10 @@ class Creature:
     def load_params(self, path):
         return np.load(path)['params']
 
-    def export_motion(self, clip, params, path):
+    def export_motion(self, clip, params, path, times=None):
         """The motion for blender/import_motion.py: per frame every bone's basis rotation (quaternion), the root's
-        location, every prop's matrix (armature space), at the clip's content times."""
+        location, every prop's matrix (armature space), at the clip's content times (or `times`, one per row of
+        params: the reader's fit gives its motion on the content's even grid)."""
         quats, locs, props = [], [], []
         for p in params:
             q, loc, pr = self.rig.pose_basis(p)
@@ -617,5 +618,6 @@ class Creature:
                             quaternions=np.array(quats), root_location=np.array(locs),
                             props=np.array([pr['name'] for pr in self.rig.props]),
                             prop_matrices=np.array(props).reshape(len(params), len(self.rig.props), 4, 4),
-                            times=self.times(clip), armature_world=np.array(self.data['armature_world']))
+                            times=self.times(clip) if times is None else np.asarray(times, float),
+                            armature_world=np.array(self.data['armature_world']))
         return path

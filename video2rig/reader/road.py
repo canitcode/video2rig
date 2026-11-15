@@ -91,7 +91,8 @@ def read_clip(project, clip, reader=None, cpu=False, tag='', log=print, cache=Tr
 def fit_reading(project, clip, cfg, uv, conf, kps, view_names, s=None, log=print):
     """The rig fitted to a reading, as `run` does it: the clip's creature (a jaw the reader sees is fitted too), the
     panels put in the creature's order and in step (sync.py), the whole clip fitted at once (fit.py). Returns
-    dict(creature, params, report, uv, conf, sync); uv and conf as the fit used them."""
+    dict(creature, params, report, uv, conf, sync, motion); params at the video's frames, motion (times, params) on
+    the content's even grid for the motion file; uv and conf as the fit used them."""
     from .fit import SETTINGS, creature_for, fit_clip
     from .sync import align
     s = SETTINGS if s is None else s
@@ -100,9 +101,9 @@ def fit_reading(project, clip, cfg, uv, conf, kps, view_names, s=None, log=print
     order = [list(view_names).index(n) for n in names]
     uv, conf = np.asarray(uv)[:, order].copy(), np.asarray(conf)[:, order].copy()
     uv, conf, sync = align(cr.views(clip), uv, conf, kps, log=log)
-    P, rep = fit_clip(cr, clip, uv, conf, kps, s=s, log=log, narrow=narrow)
+    P, rep, motion = fit_clip(cr, clip, uv, conf, kps, s=s, log=log, narrow=narrow)
     rep['panels_in_step'] = sync
-    return dict(creature=cr, params=P, report=rep, uv=uv, conf=conf, sync=sync)
+    return dict(creature=cr, params=P, report=rep, uv=uv, conf=conf, sync=sync, motion=motion)
 
 
 def run(project, clip, cfg, tag='', log=print, cpu=False):
@@ -111,5 +112,6 @@ def run(project, clip, cfg, tag='', log=print, cpu=False):
     cr, P = res['creature'], res['params']
     cr.save(clip, P, tag, {'reader': True})
     write_json(project.work(clip) / f'fit{tag}-report.json', res['report'])
-    out = cr.export_motion(clip, P, project.out() / f'{clip}{tag}.npz')
+    m = res['motion']
+    out = cr.export_motion(clip, m['params'], project.out() / f'{clip}{tag}.npz', times=m['times'])
     return cr, P, out
