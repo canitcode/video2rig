@@ -64,6 +64,18 @@ def bounds(objs):
     return lo, hi
 
 
+def set_engine(scene, engine):
+    """The render engine by name. EEVEE is BLENDER_EEVEE before Blender 4.2 and again from 5.0, BLENDER_EEVEE_NEXT in
+    4.2-4.5: either name works on every version (--engine BLENDER_EEVEE_NEXT stopped render_start.py on 5.2)."""
+    twin = {'BLENDER_EEVEE': 'BLENDER_EEVEE_NEXT', 'BLENDER_EEVEE_NEXT': 'BLENDER_EEVEE'}
+    try:
+        scene.render.engine = engine
+    except TypeError:
+        if engine not in twin:
+            raise
+        scene.render.engine = twin[engine]
+
+
 def studio(lo, hi, samples, engine):
     """The studio of blender/render_start.py (same backdrop, lights and floor)."""
     scene = bpy.context.scene
@@ -90,10 +102,7 @@ def studio(lo, hi, samples, engine):
     bsdf.inputs['Roughness'].default_value = 0.9
     floor.materials.append(mat)
     scene.collection.objects.link(bpy.data.objects.new('v2r_floor', floor))
-    try:
-        scene.render.engine = engine
-    except TypeError:
-        scene.render.engine = 'BLENDER_EEVEE_NEXT'
+    set_engine(scene, engine)
     if scene.render.engine == 'CYCLES':
         scene.cycles.samples = samples
         scene.cycles.use_denoising = True
