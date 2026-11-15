@@ -41,7 +41,8 @@ to those joints.
    joints land where the reader saw them in every view: each reading weighted by how sure the reader was, within the
    rig's joint ranges (knees and elbows bend one way), smooth from frame to frame (the joints' acceleration and the
    angles' change from frame to frame cost a little), a light pull toward the start pose, and the feet not under the
-   floor. It starts from the clip itself: every joint placed in 3D where its two readings meet, the body turned by
+   floor. Smoothness counts real time: a clip that dropped content frames (step 2) is fitted on its content's even
+   frames, the dropped ones filled from the frames around them, and the motion comes out at that even rate. It starts from the clip itself: every joint placed in 3D where its two readings meet, the body turned by
    the points on its root bone, every bone pointed at its next joint. A miss counts robustly, its scale narrowing
    from 40 px to 6 px: at first a joint far from its reading still pulls the pose out of a wrong start, at the end a
    wrong reading barely pulls. Heights come mostly from the side view; the front view foreshortens a lifted leg and
@@ -51,7 +52,9 @@ to those joints.
 
 Nothing is added after the fit: no filter, no pinned feet, no travel by steps, no springs. The motion is what the
 clip shows and the reader reads. A walk Seedance draws on the spot stays on the spot; give it travel in the game
-(root motion from the standing feet) if it needs any.
+(root motion from the standing feet) if it needs any. For a game, three helpers can be switched on per clip
+(docs/CONFIG.md, "For a game"): standing feet held still, a loop, and travel from the standing feet. They change
+what the clip shows, so they are off unless asked for.
 
 Then the motion is written for Blender: every bone's rotation at the clip's real times, the root's position and every
 prop's matrix.

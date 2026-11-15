@@ -58,8 +58,9 @@ The defaults in this table were tuned on a troll (two views), wolves (two views)
 
 The reader's fit has a few settings of its own: `SETTINGS` in `video2rig/reader/fit.py` (the number of steps, the
 robust scale of a miss, the weights of smoothness, of the pull toward the start pose and of the floor, the front
-view's weight on heights). They are not read from `creature.json`, and `run --set` does not reach them (it changes
-the older road's `solve.*`). To try one, fit the clip's reading again with it:
+view's weight on heights). `"reader_fit"` in `creature.json` sets them for the creature or for one clip
+(`"clips": {"walk": {"reader_fit": {"w_acc": 0.01}}}`); `run --set` does not reach them (it changes the older road's
+`solve.*`). To try one, fit the clip's reading again with it:
 
 ```powershell
 python -m video2rig.reader.fit my_troll stagger --set w_acc=0.05
@@ -69,3 +70,17 @@ python -m video2rig.reader.fit my_troll stagger --set w_acc=0.05
 made, so it takes about a minute, and writes `work/stagger/fit-reader.npz` and `out/stagger-reader.npz` next to the
 run's own files (another name: `--tag=-soft`). Review it with `python -m video2rig review my_troll stagger
 --tag=-reader`. Change one to fix a clip you have watched, and compare the review films.
+
+### For a game
+
+Three helpers, each off unless set (they change what the clip shows), in `"reader_fit"` or with `--set`:
+
+| Setting | What it does |
+| --- | --- |
+| `w_contact` | `0.3`: a foot that stands on the floor stays where it stands. A reader's few pixels of shake make a planted foot slide, and a game shows that. Standing is read off the fit itself: a foot keypoint within `contact_height` (0.03 of the height) above its start height and moving along the floor slower than `contact_speed` (0.3 heights a second); then `stage2_iters` (400) more steps. On a rendered bench clip with the feet planted, read by a trained reader, the feet's slide went from 1.43 to 0.58 px/s for 1% on the joint angles; 1.0 holds them harder (0.42 px/s) but cost 12% on the angles |
+| `loop` | `true`: the window whose end looks most like its start (at least `shortest_loop`, 0.5 s) written as `out/<clip>-loop.npz`, its last frames faded into the frames that lead into its start, so it ends where it starts and arrives moving as the clip moved into it (plus the window's own travel). `[1.0, 3.5]`: that window, in seconds. The clip's own motion stays as fitted. On rendered bench clips read by a trained reader, a plain cut of the window jumped at the wrap 16-22 times as hard as the motion moves inside it; the loop 1.0-1.1 times |
+| `travel` | `true`: the motion file moves the body along the floor by what the standing feet slide back, so a walk drawn on the spot walks forward (and a walk that travels keeps its travel). The review and `work/` stay on the video |
+
+```json
+"clips": {"walk": {"reader_fit": {"w_contact": 0.3, "loop": true, "travel": true}}}
+```
