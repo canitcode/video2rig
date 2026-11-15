@@ -77,10 +77,10 @@ Three helpers, each off unless set (they change what the clip shows), in `"reade
 
 | Setting | What it does |
 | --- | --- |
-| `w_contact` | `1.0`: a foot that stands on the floor stays where it stands. A reader's few pixels of shake make a planted foot slide, and a game shows that. Standing is read off the fit itself: a foot keypoint within `contact_height` (0.03 of the height) above its start height and moving along the floor slower than `contact_speed` (0.3 heights a second); then `stage2_iters` (400) more steps. On a bench clip with the feet planted (simulated readings), the feet's slide went from 24 to 3.9 px/s, and the keypoints landed 5% closer to the truth; 10 holds them too hard |
-| `loop` | `true`: the window whose end looks most like its start (at least `shortest_loop`, 0.5 s) is fitted to loop, its end pose and speed held to its start's, and written as `out/<clip>-loop.npz` (its last key the first again, plus the window's own travel). `[1.0, 3.5]`: that window, in seconds. On a bench clip repeating every 1.25 s it found two periods; the speed jump at the seam went from 295 to 10 px/s |
+| `w_contact` | `0.3`: a foot that stands on the floor stays where it stands. A reader's few pixels of shake make a planted foot slide, and a game shows that. Standing is read off the fit itself: a foot keypoint within `contact_height` (0.03 of the height) above its start height and moving along the floor slower than `contact_speed` (0.3 heights a second); then `stage2_iters` (400) more steps. On a rendered bench clip with the feet planted, read by a trained reader, the feet's slide went from 1.43 to 0.58 px/s for 1% on the joint angles; 1.0 holds them harder (0.42 px/s) but cost 12% on the angles |
+| `loop` | `true`: the window whose end looks most like its start (at least `shortest_loop`, 0.5 s) written as `out/<clip>-loop.npz`, its last frames faded into the frames that lead into its start, so it ends where it starts and arrives moving as the clip moved into it (plus the window's own travel). `[1.0, 3.5]`: that window, in seconds. The clip's own motion stays as fitted. On rendered bench clips read by a trained reader, a plain cut of the window jumped at the wrap 16-22 times as hard as the motion moves inside it; the loop 1.0-1.1 times |
 | `travel` | `true`: the motion file moves the body along the floor by what the standing feet slide back, so a walk drawn on the spot walks forward (and a walk that travels keeps its travel). The review and `work/` stay on the video |
 
 ```json
-"clips": {"walk": {"reader_fit": {"w_contact": 1.0, "loop": true, "travel": true}}}
+"clips": {"walk": {"reader_fit": {"w_contact": 0.3, "loop": true, "travel": true}}}
 ```

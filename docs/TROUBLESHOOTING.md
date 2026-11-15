@@ -44,7 +44,7 @@ reach, so watch the review film. With the older road (`--old`): `solve.smooth_le
 
 **The model goes through the floor / feet hover** - check that the start pose stands on the floor in the start frame.
 Feet in generated clips slide a little, and the tool keeps what the video shows; pin them in the engine or with IK
-keys, or for a game let the fit hold standing feet still: `"reader_fit": {"w_contact": 1.0}` (docs/CONFIG.md, "For a
+keys, or for a game let the fit hold standing feet still: `"reader_fit": {"w_contact": 0.3}` (docs/CONFIG.md, "For a
 game").
 
 **The Action plays too fast or too slow** - the timing is measured from motion; on a clip that barely moves it can
