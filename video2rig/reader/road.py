@@ -93,9 +93,9 @@ def fit_reading(project, clip, cfg, uv, conf, kps, view_names, s=None, log=print
     panels put in the creature's order and in step (sync.py), the whole clip fitted at once (fit.py). Returns
     dict(creature, params, report, uv, conf, sync, motion); params at the video's frames, motion (times, params) on
     the content's even grid for the motion file; uv and conf as the fit used them."""
-    from .fit import SETTINGS, creature_for, fit_clip
+    from .fit import creature_for, fit_clip, settings_for
     from .sync import align
-    s = SETTINGS if s is None else s
+    s = settings_for(cfg) if s is None else s
     cr, narrow = creature_for(project, cfg, kps)
     names = [v['name'] for v in cr.views(clip)]
     order = [list(view_names).index(n) for n in names]
@@ -112,6 +112,15 @@ def run(project, clip, cfg, tag='', log=print, cpu=False):
     cr, P = res['creature'], res['params']
     cr.save(clip, P, tag, {'reader': True})
     write_json(project.work(clip) / f'fit{tag}-report.json', res['report'])
-    m = res['motion']
-    out = cr.export_motion(clip, m['params'], project.out() / f'{clip}{tag}.npz', times=m['times'])
+    out = export(project, cr, clip, res['motion'], tag)
     return cr, P, out
+
+
+def export(project, cr, clip, motion, tag=''):
+    """The motion files for blender/import_motion.py: out/<clip><tag>.npz, and out/<clip><tag>-loop.npz when the fit
+    found a loop (reader_fit "loop"). Returns the first."""
+    out = cr.export_motion(clip, motion['params'], project.out() / f'{clip}{tag}.npz', times=motion['times'])
+    if 'loop' in motion:
+        cr.export_motion(clip, motion['loop']['params'], project.out() / f'{clip}{tag}-loop.npz',
+                         times=motion['loop']['times'])
+    return out

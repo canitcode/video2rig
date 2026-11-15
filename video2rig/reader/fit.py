@@ -45,7 +45,29 @@ SETTINGS = {
     'w_rest': .05,             # pull of every joint angle toward the start pose, per rad^2
     'w_floor': .5,             # a foot's keypoint under the floor, per px^2
     'feet_share': .05,         # feet: keypoints within this share of the height above the floor in the start pose
+    # for a game, each off unless set (creature.json "reader_fit", or --set): they change what the clip shows
+    'w_contact': 0.0,          # a standing foot's slide along the floor, per px^2 (0: off). A reader's few px of shake
+                               # make a planted foot slide; a game shows that
+    'loop': False,             # true: the window whose end looks most like its start, fitted to loop (its end pose and
+                               # speed held to its start's) and written as out/<clip>-loop.npz; or [start, end] seconds
+    'travel': False,           # true: the motion file moves the body along the floor by what the standing feet slide
+                               # back (a walk drawn on the spot walks forward; the review stays on the video)
+    'contact_height': .03,     # a foot keypoint stands within this share of the height above its start height
+    'contact_speed': .3,       # and moving along the floor slower than this many heights per second
+    'shortest_loop': .5,       # seconds
+    'stage2_iters': 400,       # Adam steps more, at the last step size, when w_contact or loop is on
 }
+
+
+def settings_for(cfg, sets=None):
+    """SETTINGS, the clip's "reader_fit" from creature.json over them (creature-wide, then the clip's own), and
+    sets ({key: value}: --set) over those."""
+    own = dict(cfg.get('reader_fit') or {})
+    own.update(sets or {})
+    unknown = sorted(set(own) - set(SETTINGS))
+    if unknown:
+        raise SystemExit(f'reader_fit: no such setting {", ".join(unknown)} ({", ".join(SETTINGS)})')
+    return {**SETTINGS, **own}
 
 
 def creature_for(pr, cfg, kps):
@@ -319,6 +341,59 @@ def shake(X, k):
     return float(np.linalg.norm(X[3:] - 3 * X[2:-1] + 3 * X[1:-2] - X[:-3], axis=-1).mean() * k)
 
 
+def along_floor(X, up):
+    """X (..., 3) with the up-down part taken out."""
+    up = np.asarray(up, float) / np.linalg.norm(up)
+    return X - (X @ up)[..., None] * up
+
+
+def standing(F, times, up, start_h, height, s=SETTINGS):
+    """(N, F) 1 where a foot keypoint stands on the floor, else 0: within contact_height of the height above its own
+    start height (start_h (F,), along up) and moving along the floor slower than contact_speed heights per second; the
+    median of 3 frames, so one shaky frame does not lift a foot. F (N, F, 3) the feet's keypoints at times (N,)."""
+    F = np.asarray(F, float)
+    up = np.asarray(up, float) / np.linalg.norm(up)
+    if len(F) < 2:
+        return np.zeros(F.shape[:2])
+    rate = np.linalg.norm(np.diff(along_floor(F, up), axis=0), axis=-1) / np.diff(times)[:, None]       # (N - 1, F)
+    speed = np.concatenate([rate[:1], (rate[1:] + rate[:-1]) / 2, rate[-1:]])
+    on = ((F @ up - start_h <= s['contact_height'] * height) & (speed <= s['contact_speed'] * height)).astype(float)
+    pad = np.pad(on, ((1, 1), (0, 0)), mode='edge')
+    return np.median(np.stack([pad[:-2], pad[1:-1], pad[2:]]), 0)
+
+
+def travel(F, stand, up):
+    """(N, 3) how far the body moves along the floor so that the standing feet stay where they stand: every step,
+    the standing feet's mean slide backwards; through steps no foot stands on (a leap) the speed it had before."""
+    step = np.diff(along_floor(np.asarray(F, float), up), axis=0)                                      # (N - 1, F, 3)
+    both = stand[1:] * stand[:-1]
+    out = np.zeros((len(F), 3))
+    speed = np.zeros(3)
+    for t in range(len(step)):
+        if both[t].sum() > 0:
+            speed = -(step[t] * both[t][:, None]).sum(0) / both[t].sum()
+        out[t + 1] = out[t] + speed
+    return out
+
+
+def find_loop(X, times, up, shortest=.5):
+    """(i, j) the grid frames of the window whose end looks most like its start, at least `shortest` seconds long:
+    the keypoints round their middle along the floor (the travel taken out) and their steps, frame j against frame i."""
+    X = np.asarray(X, float)
+    R = X - along_floor(X.mean(1, keepdims=True), up)
+    step = np.gradient(R, axis=0)
+    N = len(R)
+    gap = int(np.ceil(shortest / float(np.median(np.diff(times)))))
+    best, out = np.inf, (0, N - 1)
+    for i in range(N - gap):
+        d = np.linalg.norm(R[i + gap:] - R[i], axis=-1).mean(1) + 4 * np.linalg.norm(step[i + gap:] - step[i],
+                                                                                     axis=-1).mean(1)
+        j = int(np.argmin(d))
+        if d[j] < best:
+            best, out = float(d[j]), (i, i + gap + j)
+    return out
+
+
 def _exp_so3(w):
     th2 = (w * w).sum(-1, keepdim=True)[..., None]
     th = torch.sqrt(th2 + 1e-24)
@@ -484,7 +559,10 @@ def fit_clip(cr, clip, uv, conf, kps, s=SETTINGS, log=print, narrow=None):
         joints = jlo + width * torch.sigmoid(phi)
         return torch.cat([move, turn, joints, pmove, pturn], 1)[:, inv], joints
 
-    def loss_fn(scale):
+    floor_up = f64(cr.up / np.linalg.norm(cr.up))
+    bend = (k * .25 * cr.height) ** 2               # a joint 1 rad off moves a limb about a quarter of the height
+
+    def loss_fn(scale, stand=None, loop=None):
         p, joints = params()
         X = trig.points(p)                                                # (N, K, 3) on the grid
         pix = torch.stack([pr(X[seen]) for pr in projs], 1) / px          # (T, V, K, 2) the video's frames
@@ -503,7 +581,17 @@ def fit_clip(cr, clip, uv, conf, kps, s=SETTINGS, log=print, narrow=None):
         floor = (torch.relu(cr.floor - X[:, feet] @ up) ** 2).sum() * k ** 2 * s['w_floor'] if len(feet) else \
             torch.zeros((), dtype=torch.float64)
         parts = dict(data=data, acc=acc, vel=vel, prior=prior, floor=floor)
-        return data + acc + vel + prior + floor, parts, pix
+        if stand is not None:                                             # the standing feet stay where they stand
+            Ff = X[:, feet] - (X[:, feet] @ floor_up)[..., None] * floor_up
+            parts['contact'] = (((Ff[1:] - Ff[:-1]) ** 2).sum(-1) * stand).sum() * k ** 2 * s['w_contact']
+        if loop is not None:                                              # the window's end as its start, still moving
+            i, j = loop
+            mid = X.mean(1, keepdim=True)
+            R = X - (mid - (mid @ floor_up)[..., None] * floor_up)
+            pose = ((R[j] - R[i]) ** 2).sum() + ((R[j] - R[j - 1] - (R[i + 1] - R[i])) ** 2).sum()
+            angles = ((joints[j] - joints[i]) ** 2).sum() + ((turn[j] - turn[i]) ** 2).sum()
+            parts['loop'] = (pose * k ** 2 + angles * bend) * 10.0
+        return sum(parts.values()), parts, pix
 
     n_threads = torch.get_num_threads()
     torch.set_num_threads(1)
@@ -524,8 +612,30 @@ def fit_clip(cr, clip, uv, conf, kps, s=SETTINGS, log=print, narrow=None):
             if it % 250 == 0:
                 log(f'  step {it}: loss {total.item():.1f} ' +
                     ' '.join(f'{n} {v.item():.1f}' for n, v in parts.items()))
+        stand = loop = None
+        if (s['w_contact'] > 0 and len(feet)) or s['loop']:
+            # for a game (SETTINGS): the feet's standing and the loop's window read off the fit so far, then more
+            # steps with them
+            with torch.no_grad():
+                Xs = trig.points(params()[0]).numpy()
+            if s['w_contact'] > 0 and len(feet):
+                on = standing(Xs[:, feet], grid_t, cr.up, X0[feet] @ cr.up, cr.height, s)
+                stand = f64(on[1:] * on[:-1])
+                log(f'  contacts: {100 * on.mean():.0f}% of the feet\'s frames stand')
+            if s['loop']:
+                if isinstance(s['loop'], (list, tuple)):
+                    loop = tuple(int(np.argmin(np.abs(grid_t - float(v)))) for v in s['loop'])
+                else:
+                    loop = find_loop(Xs[:, trig.body_idx], grid_t, cr.up, s['shortest_loop'])
+                loop = (max(1, loop[0]), min(N - 1, loop[1]))
+                log(f'  loop: {grid_t[loop[0]]:.2f}-{grid_t[loop[1]]:.2f} s')
+            for it in range(int(s['stage2_iters'])):
+                total, parts, _ = loss_fn(s['scale_px'], stand, loop)
+                opt.zero_grad()
+                total.backward()
+                opt.step()
         with torch.no_grad():
-            total, parts, pix = loss_fn(s['scale_px'])
+            total, parts, pix = loss_fn(s['scale_px'], stand, loop)
             p_grid = params()[0]
             X_grid = trig.points(p_grid).numpy()
             P_grid = p_grid.numpy()
@@ -543,10 +653,32 @@ def fit_clip(cr, clip, uv, conf, kps, s=SETTINGS, log=print, narrow=None):
                   shake_px=round(shake(X_grid[:, trig.body_idx], k), 3))
     if N > T:
         report['frames_added'] = N - T
+    motion = dict(times=grid_t, params=P_grid)
+    if s['travel'] and len(feet):
+        moved = travel(X_grid[:, feet], standing(X_grid[:, feet], grid_t, cr.up, X0[feet] @ cr.up, cr.height, s),
+                       cr.up)
+        P_out = P_grid.copy()
+        P_out[:, :3] += moved
+        for i in range(len(rig.props)):
+            P_out[:, rig.prop0 + 6 * i:rig.prop0 + 6 * i + 3] += moved
+        motion['params'] = P_out
+        report['travel_heights'] = round(float(np.linalg.norm(moved[-1]) / cr.height), 2)
+    if loop is not None:
+        i, j = loop
+        L = motion['params'][i:j + 1].copy()
+        shift = along_floor(L[-1, :3] - L[0, :3], cr.up)                 # the window's own travel stays
+        seam = float(np.abs(L[-1, 3:] - L[0, 3:]).max())
+        L[-1] = L[0]
+        L[-1, :3] += shift
+        for q in range(len(rig.props)):
+            L[-1, rig.prop0 + 6 * q:rig.prop0 + 6 * q + 3] += shift
+        motion['loop'] = dict(times=grid_t[i:j + 1] - grid_t[i], params=L)
+        report['loop'] = dict(start_s=round(float(grid_t[i]), 3), end_s=round(float(grid_t[j]), 3),
+                              seam_rad=round(seam, 4))
     log(f'fit {clip}: {T} frames in {report["secs"]} s; keypoint miss (mean px) ' +
         ', '.join(f'{n} {m}' for n, m in report['miss_px'].items()) + '; sure readings (median px) ' +
         ', '.join(f'{n} {m}' for n, m in report['sure_miss_px'].items()))
-    return P, report, dict(times=grid_t, params=P_grid)
+    return P, report, motion
 
 
 def main():
@@ -557,24 +689,18 @@ def main():
     ap.add_argument('--tag', default='-reader')
     ap.add_argument('--set', action='append', default=[], metavar='KEY=VALUE', help='one SETTINGS value for this run')
     a = ap.parse_args()
-    from .road import fit_reading
-    settings = dict(SETTINGS)
-    for kv in a.set:
-        key, v = kv.split('=', 1)
-        if key not in SETTINGS:
-            raise SystemExit(f'--set {key}: no such setting ({", ".join(SETTINGS)})')
-        settings[key] = json.loads(v)
+    from .road import export, fit_reading
     t0 = time.time()
     pr = Project(a.project)
     cfg = pr.clip_cfg(a.clip)
     cfg.setdefault('solve', {})
+    settings = settings_for(cfg, {kv.split('=', 1)[0]: json.loads(kv.split('=', 1)[1]) for kv in a.set})
     d = np.load(a.reading or pr.work(a.clip) / 'reader.npz')
     kps = [tuple(k) for k in json.loads(str(d['keypoints']))]
     res = fit_reading(pr, a.clip, cfg, d['uv'], d['conf'], kps, [str(v) for v in d['views']], s=settings)
     cr, P, report = res['creature'], res['params'], res['report']
     path = cr.save(a.clip, P, a.tag, {'reader': True})
-    m = res['motion']
-    out = cr.export_motion(a.clip, m['params'], pr.out() / f'{a.clip}{a.tag}.npz', times=m['times'])
+    out = export(pr, cr, a.clip, res['motion'], a.tag)
     write_json(pr.work(a.clip) / f'fit{a.tag}-report.json', report)
     print(f'FIT {a.clip}: {len(P)} frames in {time.time() - t0:.1f} s -> {path}, {out}', flush=True)
 

@@ -52,7 +52,9 @@ to those joints.
 
 Nothing is added after the fit: no filter, no pinned feet, no travel by steps, no springs. The motion is what the
 clip shows and the reader reads. A walk Seedance draws on the spot stays on the spot; give it travel in the game
-(root motion from the standing feet) if it needs any.
+(root motion from the standing feet) if it needs any. For a game, three helpers can be switched on per clip
+(docs/CONFIG.md, "For a game"): standing feet held still, a loop, and travel from the standing feet. They change
+what the clip shows, so they are off unless asked for.
 
 Then the motion is written for Blender: every bone's rotation at the clip's real times, the root's position and every
 prop's matrix.
