@@ -450,7 +450,8 @@ def main():
     ap.add_argument('--init', default='', help="another creature's reader.pt to start from (all but the keypoint "
                                                  "head): it already knows what a joint looks like in our renders")
     ap.add_argument('--backbone', default=BACKBONE, help='the picture model the reader is built on (Hugging Face '
-                    'name): facebook/dinov2-small (default, 85 MB) or facebook/dinov2-base (330 MB, about 3 times slower)')
+                    'name): facebook/dinov2-small (default, 85 MB) or facebook/dinov2-base (330 MB: its readings '
+                    'land closer, its training takes about 1.4 times as long)')
     ap.add_argument('--batch', type=int, default=24)
     ap.add_argument('--lr', type=float, default=6e-4)
     ap.add_argument('--out', default='reader/reader.pt')
