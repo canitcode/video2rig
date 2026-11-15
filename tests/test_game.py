@@ -66,15 +66,17 @@ def test_the_game_helpers_are_off_by_default():
 
 
 def test_a_closed_loop_ends_where_it_starts_and_keeps_its_travel():
-    n = 40
-    t = np.linspace(0, 1, n + 1)[:, None]
-    L = np.zeros((n + 1, 6))
-    L[:, :3] = np.array([.5, 0, .1]) * t                                       # travels along x, rises a little
-    L[:, 3:] = np.sin(2 * np.pi * .9 * t) + .3 * t                             # angles: almost a period, drifting
     from video2rig.reader.fit import close_loop
-    out, bent = close_loop(L, UP)
-    assert np.allclose(out[-1, 3:], out[0, 3:]) and bent > .1                   # the angles close
-    assert np.isclose(out[-1, 0] - out[0, 0], .5) and np.isclose(out[-1, 2], out[0, 2])   # travel stays, height closes
-    start, end = out[1] - out[0], out[-1] - out[-2]
-    assert np.abs(end[3:] - start[3:]).max() < .1 * np.abs(L[-1, 3:] - L[-2, 3:] - (L[1, 3:] - L[0, 3:])).max()
-    assert np.abs(np.diff(out, 3, axis=0)).max() < 2 * np.abs(np.diff(L, 3, axis=0)).max() + 1e-3   # no kink inside
+    t = np.arange(81)[:, None] / 24.0
+    P = np.zeros((81, 6))
+    P[:, :3] = np.array([.5, 0, .02]) * t                                      # travels along x, rises a little
+    P[:, 3:] = np.sin(2 * np.pi * .6 * t) + .05 * t                            # angles: about a period, drifting
+    i, j = 30, 70
+    L, faded = close_loop(P, i, j, UP)
+    assert len(L) == j - i + 1 and np.allclose(L[0], P[i])                      # it starts as the clip there
+    assert np.allclose(L[-1, 3:], L[0, 3:]) and faded > 0                       # and ends where it starts
+    assert np.isclose(L[-1, 0] - L[0, 0], P[j, 0] - P[i, 0]) and np.isclose(L[-1, 2], L[0, 2])  # travel stays
+    assert np.allclose(L[:j - i - 10], P[i:j - 10])                             # untouched before the fade
+    into = L[-1] - L[-2]                                                        # it arrives moving as the clip
+    gap = np.abs(P[j, 3:] - P[i, 3:]).max()
+    assert np.abs(into[3:] - (P[i, 3:] - P[i - 1, 3:])).max() < .05 * gap

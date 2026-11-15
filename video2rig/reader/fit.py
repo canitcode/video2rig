@@ -49,7 +49,7 @@ SETTINGS = {
     'w_contact': 0.0,          # a standing foot's slide along the floor, per px^2 (0: off; 0.3 suits). A reader's few
                                # px of shake make a planted foot slide; a game shows that
     'loop': False,             # true: the window whose end looks most like its start, written as out/<clip>-loop.npz
-                               # with its end bent onto its start (close_loop); or [start, end] seconds. The clip's own
+                               # with its end faded into its start (close_loop); or [start, end] seconds. The clip's own
                                # motion stays as fitted
     'travel': False,           # true: the motion file moves the body along the floor by what the standing feet slide
                                # back (a walk drawn on the spot walks forward; the review stays on the video)
@@ -395,24 +395,28 @@ def find_loop(X, times, up, shortest=.5):
     return out
 
 
-def close_loop(L, up, moves=(slice(0, 3),)):
-    """A window of the motion (L (n + 1, rig.n) parameters) made to loop: its last frame bent onto its first, pose and
-    speed, by a smooth correction that grows from nothing at the start (a cubic: no step and no kink anywhere), so
-    played round, the end runs into the start as the window's own frames run into each other. The places in `moves`
+def close_loop(P, i, j, up, moves=(slice(0, 3),), share=.25):
+    """The window [i, j] of the motion (P (N, rig.n) parameters) as a loop: its last frames cross-faded into the
+    frames that lead into its start (a quarter of the window, at most as many as there are before i), so its last
+    frame is its first again and it arrives there moving as the clip moved into it. Only fitted frames are mixed: where
+    the window is a whole period the two are nearly the same and the fade changes almost nothing. The places in `moves`
     (the root's, the props': 3 channels each) keep the window's travel along the floor, `up` the up direction. Returns
-    the loop and the largest angle its end was bent by (radians)."""
-    L = np.asarray(L, float)
-    n = len(L) - 1
-    gap = L[-1] - L[0]
-    speed = (L[-1] - L[-2]) - (L[1] - L[0])
+    the loop (j - i + 1, rig.n) and the largest angle the fade moved (radians)."""
+    P = np.asarray(P, float)
+    L = P[i:j + 1].copy()
+    n = j - i
     up = np.asarray(up, float) / np.linalg.norm(up)
-    angles = np.ones(L.shape[1], bool)
+    shift = np.zeros(P.shape[1])
+    angles = np.ones(P.shape[1], bool)
     for m in moves:
-        gap[m] = (gap[m] @ up) * up                                      # travel stays, the height closes
+        shift[m] = along_floor(P[j, m] - P[i, m], up)                      # the window's own travel
         angles[m] = False
-    tau = np.arange(n + 1)[:, None] / n
-    out = L - gap * (3 * tau ** 2 - 2 * tau ** 3) - speed * n * (tau ** 3 - tau ** 2)
-    return out, float(np.abs(gap[angles]).max()) if angles.any() else 0.0
+    fade = min(int(round(share * n)), i)
+    for k in range(n - fade, n + 1):
+        w = 1.0 if fade == 0 else (k - (n - fade)) / fade
+        w = w * w * (3 - 2 * w)                                            # smooth at both ends of the fade
+        L[k] = (1 - w) * L[k] + w * (P[i - (n - k)] + shift)
+    return L, float(np.abs(L - P[i:j + 1])[:, angles].max()) if angles.any() else 0.0
 
 
 def _exp_so3(w):
@@ -673,11 +677,11 @@ def fit_clip(cr, clip, uv, conf, kps, s=SETTINGS, log=print, narrow=None):
         else:
             i, j = find_loop(X_grid[:, trig.body_idx], grid_t, cr.up, s['shortest_loop'])
         moves = [slice(0, 3)] + [slice(rig.prop0 + 6 * q, rig.prop0 + 6 * q + 3) for q in range(len(rig.props))]
-        L, bent = close_loop(motion['params'][i:j + 1], cr.up, moves)
+        L, bent = close_loop(motion['params'], i, j, cr.up, moves)
         motion['loop'] = dict(times=grid_t[i:j + 1] - grid_t[i], params=L)
         report['loop'] = dict(start_s=round(float(grid_t[i]), 3), end_s=round(float(grid_t[j]), 3),
-                              bent_rad=round(bent, 4))
-        log(f'  loop: {grid_t[i]:.2f}-{grid_t[j]:.2f} s, its end bent onto its start by {bent:.3f} rad at most')
+                              faded_rad=round(bent, 4))
+        log(f'  loop: {grid_t[i]:.2f}-{grid_t[j]:.2f} s, its end faded into its start ({bent:.3f} rad at most)')
     log(f'fit {clip}: {T} frames in {report["secs"]} s; keypoint miss (mean px) ' +
         ', '.join(f'{n} {m}' for n, m in report['miss_px'].items()) + '; sure readings (median px) ' +
         ', '.join(f'{n} {m}' for n, m in report['sure_miss_px'].items()))
