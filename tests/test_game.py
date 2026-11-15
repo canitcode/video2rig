@@ -63,3 +63,18 @@ def test_reader_fit_settings_come_from_creature_json_and_set_wins():
 
 def test_the_game_helpers_are_off_by_default():
     assert SETTINGS['w_contact'] == 0 and SETTINGS['loop'] is False and SETTINGS['travel'] is False
+
+
+def test_a_closed_loop_ends_where_it_starts_and_keeps_its_travel():
+    n = 40
+    t = np.linspace(0, 1, n + 1)[:, None]
+    L = np.zeros((n + 1, 6))
+    L[:, :3] = np.array([.5, 0, .1]) * t                                       # travels along x, rises a little
+    L[:, 3:] = np.sin(2 * np.pi * .9 * t) + .3 * t                             # angles: almost a period, drifting
+    from video2rig.reader.fit import close_loop
+    out, bent = close_loop(L, UP)
+    assert np.allclose(out[-1, 3:], out[0, 3:]) and bent > .1                   # the angles close
+    assert np.isclose(out[-1, 0] - out[0, 0], .5) and np.isclose(out[-1, 2], out[0, 2])   # travel stays, height closes
+    start, end = out[1] - out[0], out[-1] - out[-2]
+    assert np.abs(end[3:] - start[3:]).max() < .1 * np.abs(L[-1, 3:] - L[-2, 3:] - (L[1, 3:] - L[0, 3:])).max()
+    assert np.abs(np.diff(out, 3, axis=0)).max() < 2 * np.abs(np.diff(L, 3, axis=0)).max() + 1e-3   # no kink inside

@@ -46,16 +46,17 @@ SETTINGS = {
     'w_floor': .5,             # a foot's keypoint under the floor, per px^2
     'feet_share': .05,         # feet: keypoints within this share of the height above the floor in the start pose
     # for a game, each off unless set (creature.json "reader_fit", or --set): they change what the clip shows
-    'w_contact': 0.0,          # a standing foot's slide along the floor, per px^2 (0: off). A reader's few px of shake
-                               # make a planted foot slide; a game shows that
-    'loop': False,             # true: the window whose end looks most like its start, fitted to loop (its end pose and
-                               # speed held to its start's) and written as out/<clip>-loop.npz; or [start, end] seconds
+    'w_contact': 0.0,          # a standing foot's slide along the floor, per px^2 (0: off; 0.3 suits). A reader's few
+                               # px of shake make a planted foot slide; a game shows that
+    'loop': False,             # true: the window whose end looks most like its start, written as out/<clip>-loop.npz
+                               # with its end bent onto its start (close_loop); or [start, end] seconds. The clip's own
+                               # motion stays as fitted
     'travel': False,           # true: the motion file moves the body along the floor by what the standing feet slide
                                # back (a walk drawn on the spot walks forward; the review stays on the video)
     'contact_height': .03,     # a foot keypoint stands within this share of the height above its start height
     'contact_speed': .3,       # and moving along the floor slower than this many heights per second
     'shortest_loop': .5,       # seconds
-    'stage2_iters': 400,       # Adam steps more, at the last step size, when w_contact or loop is on
+    'stage2_iters': 400,       # Adam steps more, at the last step size, when w_contact is on
 }
 
 
@@ -394,6 +395,26 @@ def find_loop(X, times, up, shortest=.5):
     return out
 
 
+def close_loop(L, up, moves=(slice(0, 3),)):
+    """A window of the motion (L (n + 1, rig.n) parameters) made to loop: its last frame bent onto its first, pose and
+    speed, by a smooth correction that grows from nothing at the start (a cubic: no step and no kink anywhere), so
+    played round, the end runs into the start as the window's own frames run into each other. The places in `moves`
+    (the root's, the props': 3 channels each) keep the window's travel along the floor, `up` the up direction. Returns
+    the loop and the largest angle its end was bent by (radians)."""
+    L = np.asarray(L, float)
+    n = len(L) - 1
+    gap = L[-1] - L[0]
+    speed = (L[-1] - L[-2]) - (L[1] - L[0])
+    up = np.asarray(up, float) / np.linalg.norm(up)
+    angles = np.ones(L.shape[1], bool)
+    for m in moves:
+        gap[m] = (gap[m] @ up) * up                                      # travel stays, the height closes
+        angles[m] = False
+    tau = np.arange(n + 1)[:, None] / n
+    out = L - gap * (3 * tau ** 2 - 2 * tau ** 3) - speed * n * (tau ** 3 - tau ** 2)
+    return out, float(np.abs(gap[angles]).max()) if angles.any() else 0.0
+
+
 def _exp_so3(w):
     th2 = (w * w).sum(-1, keepdim=True)[..., None]
     th = torch.sqrt(th2 + 1e-24)
@@ -560,9 +581,8 @@ def fit_clip(cr, clip, uv, conf, kps, s=SETTINGS, log=print, narrow=None):
         return torch.cat([move, turn, joints, pmove, pturn], 1)[:, inv], joints
 
     floor_up = f64(cr.up / np.linalg.norm(cr.up))
-    bend = (k * .25 * cr.height) ** 2               # a joint 1 rad off moves a limb about a quarter of the height
 
-    def loss_fn(scale, stand=None, loop=None):
+    def loss_fn(scale, stand=None):
         p, joints = params()
         X = trig.points(p)                                                # (N, K, 3) on the grid
         pix = torch.stack([pr(X[seen]) for pr in projs], 1) / px          # (T, V, K, 2) the video's frames
@@ -584,13 +604,6 @@ def fit_clip(cr, clip, uv, conf, kps, s=SETTINGS, log=print, narrow=None):
         if stand is not None:                                             # the standing feet stay where they stand
             Ff = X[:, feet] - (X[:, feet] @ floor_up)[..., None] * floor_up
             parts['contact'] = (((Ff[1:] - Ff[:-1]) ** 2).sum(-1) * stand).sum() * k ** 2 * s['w_contact']
-        if loop is not None:                                              # the window's end as its start, still moving
-            i, j = loop
-            mid = X.mean(1, keepdim=True)
-            R = X - (mid - (mid @ floor_up)[..., None] * floor_up)
-            pose = ((R[j] - R[i]) ** 2).sum() + ((R[j] - R[j - 1] - (R[i + 1] - R[i])) ** 2).sum()
-            angles = ((joints[j] - joints[i]) ** 2).sum() + ((turn[j] - turn[i]) ** 2).sum()
-            parts['loop'] = (pose * k ** 2 + angles * bend) * 10.0
         return sum(parts.values()), parts, pix
 
     n_threads = torch.get_num_threads()
@@ -612,30 +625,21 @@ def fit_clip(cr, clip, uv, conf, kps, s=SETTINGS, log=print, narrow=None):
             if it % 250 == 0:
                 log(f'  step {it}: loss {total.item():.1f} ' +
                     ' '.join(f'{n} {v.item():.1f}' for n, v in parts.items()))
-        stand = loop = None
-        if (s['w_contact'] > 0 and len(feet)) or s['loop']:
-            # for a game (SETTINGS): the feet's standing and the loop's window read off the fit so far, then more
-            # steps with them
+        stand = None
+        if s['w_contact'] > 0 and len(feet):
+            # for a game (SETTINGS): the feet's standing read off the fit so far, then more steps with it
             with torch.no_grad():
                 Xs = trig.points(params()[0]).numpy()
-            if s['w_contact'] > 0 and len(feet):
-                on = standing(Xs[:, feet], grid_t, cr.up, X0[feet] @ cr.up, cr.height, s)
-                stand = f64(on[1:] * on[:-1])
-                log(f'  contacts: {100 * on.mean():.0f}% of the feet\'s frames stand')
-            if s['loop']:
-                if isinstance(s['loop'], (list, tuple)):
-                    loop = tuple(int(np.argmin(np.abs(grid_t - float(v)))) for v in s['loop'])
-                else:
-                    loop = find_loop(Xs[:, trig.body_idx], grid_t, cr.up, s['shortest_loop'])
-                loop = (max(1, loop[0]), min(N - 1, loop[1]))
-                log(f'  loop: {grid_t[loop[0]]:.2f}-{grid_t[loop[1]]:.2f} s')
+            on = standing(Xs[:, feet], grid_t, cr.up, X0[feet] @ cr.up, cr.height, s)
+            stand = f64(on[1:] * on[:-1])
+            log(f'  contacts: {100 * on.mean():.0f}% of the feet\'s frames stand')
             for it in range(int(s['stage2_iters'])):
-                total, parts, _ = loss_fn(s['scale_px'], stand, loop)
+                total, parts, _ = loss_fn(s['scale_px'], stand)
                 opt.zero_grad()
                 total.backward()
                 opt.step()
         with torch.no_grad():
-            total, parts, pix = loss_fn(s['scale_px'], stand, loop)
+            total, parts, pix = loss_fn(s['scale_px'], stand)
             p_grid = params()[0]
             X_grid = trig.points(p_grid).numpy()
             P_grid = p_grid.numpy()
@@ -663,18 +667,17 @@ def fit_clip(cr, clip, uv, conf, kps, s=SETTINGS, log=print, narrow=None):
             P_out[:, rig.prop0 + 6 * i:rig.prop0 + 6 * i + 3] += moved
         motion['params'] = P_out
         report['travel_heights'] = round(float(np.linalg.norm(moved[-1]) / cr.height), 2)
-    if loop is not None:
-        i, j = loop
-        L = motion['params'][i:j + 1].copy()
-        shift = along_floor(L[-1, :3] - L[0, :3], cr.up)                 # the window's own travel stays
-        seam = float(np.abs(L[-1, 3:] - L[0, 3:]).max())
-        L[-1] = L[0]
-        L[-1, :3] += shift
-        for q in range(len(rig.props)):
-            L[-1, rig.prop0 + 6 * q:rig.prop0 + 6 * q + 3] += shift
+    if s['loop']:
+        if isinstance(s['loop'], (list, tuple)):
+            i, j = (int(np.argmin(np.abs(grid_t - float(v)))) for v in s['loop'])
+        else:
+            i, j = find_loop(X_grid[:, trig.body_idx], grid_t, cr.up, s['shortest_loop'])
+        moves = [slice(0, 3)] + [slice(rig.prop0 + 6 * q, rig.prop0 + 6 * q + 3) for q in range(len(rig.props))]
+        L, bent = close_loop(motion['params'][i:j + 1], cr.up, moves)
         motion['loop'] = dict(times=grid_t[i:j + 1] - grid_t[i], params=L)
         report['loop'] = dict(start_s=round(float(grid_t[i]), 3), end_s=round(float(grid_t[j]), 3),
-                              seam_rad=round(seam, 4))
+                              bent_rad=round(bent, 4))
+        log(f'  loop: {grid_t[i]:.2f}-{grid_t[j]:.2f} s, its end bent onto its start by {bent:.3f} rad at most')
     log(f'fit {clip}: {T} frames in {report["secs"]} s; keypoint miss (mean px) ' +
         ', '.join(f'{n} {m}' for n, m in report['miss_px'].items()) + '; sure readings (median px) ' +
         ', '.join(f'{n} {m}' for n, m in report['sure_miss_px'].items()))
