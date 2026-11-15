@@ -97,6 +97,7 @@ Read next:
   the defaults are not enough.
 - [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md): the method (the joint reader), what it can and cannot see.
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md): graphics card memory, timing, wrong legs, sliding feet.
+- [docs/GAME.md](docs/GAME.md): the motions into Unity (FBX export, import settings that keep the motion as it is).
 
 ## Licence
 
