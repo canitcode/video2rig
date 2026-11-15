@@ -17,12 +17,13 @@ import torch
 
 from .. import clip as clipmod
 from ..common import Project
-from .net import SIZE, Reader, decode, letterbox, normalise
+from .net import BACKBONE, SIZE, Reader, decode, letterbox, normalise
 
 
 def load_reader(path, dev):
     ck = torch.load(path, map_location='cpu', weights_only=False)
-    model = Reader(len(ck['keypoints']), pretrained=False, context=ck.get('context', 0), depth=ck.get('depth', False),
+    model = Reader(len(ck['keypoints']), backbone=ck.get('backbone', BACKBONE), pretrained=False,
+                   context=ck.get('context', 0), depth=ck.get('depth', False),
                    skin=ck.get('skin', False), dense=ck.get('dense', 0))
     model.load_state_dict(ck['state'])
     return model.to(dev).eval(), ck
