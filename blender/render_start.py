@@ -12,7 +12,7 @@ jumps); --margin-wide 1.45 (room around the body's length or width across a pane
 its length, not only its height; off by default, so earlier start frames come out as before); --lead 0.18 (the side and top views look this share of their frame ahead of the
 body: room in front for a charge or a crawl forward); --hover 0.07 (a creature that floats: the floor lies this
 share of the body's height under its lowest point, so its shadow stands free of it and Seedance keeps it in the
-air; put the same drop into creature.json as "floor", see the line the script prints); --engine CYCLES|BLENDER_EEVEE_NEXT;
+air; put the same drop into creature.json as "floor", see the line the script prints); --engine CYCLES|BLENDER_EEVEE;
 --divider 4 (a dark line between the two views, px; 0 = none: it keeps Seedance from blending the panels).
 Upload start/start.png to Seedance as the first frame. Keep the model, its pose and the cameras unchanged
 afterwards: the start frame is the one moment where the tool knows the pose and the camera exactly.
@@ -77,6 +77,18 @@ def facing(arm, how):
     return v
 
 
+def set_engine(scene, engine):
+    """The render engine by name. EEVEE is BLENDER_EEVEE before Blender 4.2 and again from 5.0, BLENDER_EEVEE_NEXT in
+    4.2-4.5: either name works on every version (--engine BLENDER_EEVEE_NEXT stopped render_start.py on 5.2)."""
+    twin = {'BLENDER_EEVEE': 'BLENDER_EEVEE_NEXT', 'BLENDER_EEVEE_NEXT': 'BLENDER_EEVEE'}
+    try:
+        scene.render.engine = engine
+    except TypeError:
+        if engine not in twin:
+            raise
+        scene.render.engine = twin[engine]
+
+
 def studio(lo, hi, samples, engine):
     scene = bpy.context.scene
     world = bpy.data.worlds.new('video2rig_studio')
@@ -102,7 +114,7 @@ def studio(lo, hi, samples, engine):
     bsdf.inputs['Roughness'].default_value = 0.9
     floor.materials.append(mat)
     scene.collection.objects.link(bpy.data.objects.new('v2r_floor', floor))
-    scene.render.engine = engine
+    set_engine(scene, engine)
     if engine == 'CYCLES':
         scene.cycles.device = 'CPU'
         scene.cycles.samples = samples
