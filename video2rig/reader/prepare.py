@@ -44,6 +44,9 @@ def main():
     ap.add_argument('--minutes', type=float, default=8.0, help='training time')
     ap.add_argument('--steps', type=int, default=0, help='train a step count instead of a time (a hot card)')
     ap.add_argument('--init', default='', help="another creature's reader.pt to start the training from")
+    ap.add_argument('--backbone', default='', help='the picture model the reader is built on (train.py --backbone): '
+                    'facebook/dinov2-base reads closer than the default facebook/dinov2-small, its training takes '
+                    'about 1.4 times as long')
     ap.add_argument('--copies', type=int, default=16)
     ap.add_argument('--samples', type=int, default=8)
     ap.add_argument('--blender', default='')
@@ -90,7 +93,8 @@ def main():
         return
     t = time.time()
     run([py, '-m', 'video2rig.reader.train', str(pr.root), '--minutes', str(a.minutes), '--steps', str(a.steps),
-         '--out', a.out] + (['--init', str(Path(a.init).resolve())] if a.init else []),
+         '--out', a.out] + (['--init', str(Path(a.init).resolve())] if a.init else []) +
+        (['--backbone', a.backbone] if a.backbone else []),
         rd / f'train{Path(a.out).stem.removeprefix("reader")}.log')
     clock['train_s'] = round(time.time() - t, 1)
     clock['total_min'] = round((time.time() - t0) / 60, 2)

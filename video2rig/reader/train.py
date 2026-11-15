@@ -25,7 +25,7 @@ import torch.nn.functional as F
 from ..common import Project, write_json
 from ..creature import Creature
 from . import end_pairs, is_offaxis, keypoints, points, project_ortho, render_keypoints
-from .net import SIZE, Reader, count_params, decode, gaussians, letterbox, normalise, sample_maps
+from .net import BACKBONE, SIZE, Reader, count_params, decode, gaussians, letterbox, normalise, sample_maps
 
 HOLD_OUT = .05
 
@@ -449,6 +449,9 @@ def main():
                          'clock with a tenth of them)')
     ap.add_argument('--init', default='', help="another creature's reader.pt to start from (all but the keypoint "
                                                  "head): it already knows what a joint looks like in our renders")
+    ap.add_argument('--backbone', default=BACKBONE, help='the picture model the reader is built on (Hugging Face '
+                    'name): facebook/dinov2-small (default, 85 MB) or facebook/dinov2-base (330 MB: its readings '
+                    'land closer, its training takes about 1.4 times as long)')
     ap.add_argument('--batch', type=int, default=24)
     ap.add_argument('--lr', type=float, default=6e-4)
     ap.add_argument('--out', default='reader/reader.pt')
@@ -507,7 +510,8 @@ def main():
             raise SystemExit(f'skin_labels.npz: {len(sk["maps"])} maps for {len(items)} pictures (make them again)')
         skin_maps = sk['maps']
         skin_ck = {'skin': True, 'skin_mid': sk['mid'], 'skin_height': float(sk['height'])}
-    model = Reader(len(kps), context=2 * len(kps) if a.context else 0, depth=a.depth, skin=a.skin).to(dev)
+    model = Reader(len(kps), backbone=a.backbone, context=2 * len(kps) if a.context else 0, depth=a.depth,
+                   skin=a.skin).to(dev)
     log(f'reader: {count_params(model):.1f} M parameters')
     if a.init:
         ck = torch.load(a.init, map_location='cpu', weights_only=False)
@@ -688,7 +692,7 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
     # the weights first: a check that fails afterwards must not throw the training away
     extra_ck.update(skin_ck)
-    torch.save({'state': model.state_dict(), 'keypoints': kps, 'size': SIZE, 'context': model.context,
+    torch.save({'state': model.state_dict(), 'keypoints': kps, 'size': SIZE, 'context': model.context, 'backbone': a.backbone,
                 'depth': model.depth, 'renders': a.renders, 'steps': step, **extra_ck}, out)
     if skin_maps is not None:
         extra_ck['held_out_skin'] = evaluate_skin(model, imgs[val], skin_maps[val], dev)
@@ -710,7 +714,7 @@ def main():
             model, imgs[val], uv[val], dd_all[val], inside[val], seen[val], views[val], kps, cr.height, dev).items()}
         log(f'held out, depth: {depth_report}')
     torch.save({'state': model.state_dict(), 'keypoints': kps, 'size': SIZE, 'held_out': report,
-                'context': model.context, 'depth': model.depth, 'held_out_depth': depth_report,
+                'context': model.context, 'backbone': a.backbone, 'depth': model.depth, 'held_out_depth': depth_report,
                 'renders': a.renders, 'steps': step, **extra_ck}, out)
     write_json(out.with_name(out.stem + '-train.json'), {'held_out': report, 'held_out_depth': depth_report,
                                                          **extra_report, 'real': a.real or None,

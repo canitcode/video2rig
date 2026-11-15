@@ -142,6 +142,7 @@ were trained to 9000 steps: 35-46 minutes on an RTX 4070. The default, 8 minutes
 | `--minutes` | 8 | training time, when `--steps` is not given |
 | `--poses` | 3000 | how many random poses |
 | `--init` | | another creature's `reader.pt` to start from (it already knows what a joint looks like in these renders) |
+| `--backbone` | `facebook/dinov2-small` | the picture model the reader is built on. `facebook/dinov2-base` (330 MB, downloaded once) reads closer: on rendered clips with known motion the fit's keypoints landed 10-15% closer to the truth and its joint angles 11-15% (a walk, a cycle, at 24 and 30-5 fps), for about 1.4 times the training time and up to twice the reading time |
 | `--keep` | | keep the poses and pictures already in `reader/` and only train (to train longer, or after `--skip-train`) |
 | `--skip-train` | | poses and pictures only: render the next creature while another one trains, then run again with `--keep` |
 | `--out` | `reader/reader.pt` | where the reader goes, in the project. `run` reads only `reader/reader.pt`; an experiment can go beside it (`reader/reader-try.pt`) |
