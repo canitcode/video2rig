@@ -379,14 +379,16 @@ def travel(F, stand, up):
 
 def find_loop(X, times, up, shortest=.5):
     """(i, j) the grid frames of the window whose end looks most like its start, at least `shortest` seconds long:
-    the keypoints round their middle along the floor (the travel taken out) and their steps, frame j against frame i."""
+    the keypoints round their middle along the floor (the travel taken out) and their steps, frame j against frame i.
+    It starts a quarter of `shortest` into the clip or later: close_loop fades its end into the frames before it."""
     X = np.asarray(X, float)
     R = X - along_floor(X.mean(1, keepdims=True), up)
     step = np.gradient(R, axis=0)
     N = len(R)
     gap = int(np.ceil(shortest / float(np.median(np.diff(times)))))
-    best, out = np.inf, (0, N - 1)
-    for i in range(N - gap):
+    lead = min(int(np.ceil(gap / 4)), max(N - gap - 1, 0))
+    best, out = np.inf, (lead, N - 1)
+    for i in range(lead, N - gap):
         d = np.linalg.norm(R[i + gap:] - R[i], axis=-1).mean(1) + 4 * np.linalg.norm(step[i + gap:] - step[i],
                                                                                      axis=-1).mean(1)
         j = int(np.argmin(d))
